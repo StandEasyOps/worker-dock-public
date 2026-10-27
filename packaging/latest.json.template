@@ -1,0 +1,14 @@
+{
+  "version": "0.1.0",
+  "notes": "Unsigned tester build. Azure Trusted Signing, apt hosting, and winget publish are not enabled.",
+  "platforms": {
+    "linux-x86_64": {
+      "signature": "",
+      "url": "https://get.standeasyops.com/releases/v0.1.0/worker-dock_0.1.0_amd64.deb"
+    },
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://get.standeasyops.com/releases/v0.1.0/worker-dock_0.1.0_x64_en-US.msi"
+    }
+  }
+}

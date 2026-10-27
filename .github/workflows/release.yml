@@ -1,0 +1,238 @@
+# Unsigned tester artifacts. Azure Trusted Signing, apt hosting, and winget
+# publish are intentionally not run. See packaging/README.md.
+#
+# Action pins are full SHAs (DESIGN §11). Bump the SHA and the version comment together.
+#
+# Download/apt URLs are placeholders from packaging/urls.toml
+# (https://get.standeasyops.com). This workflow does not provision DNS or hosting.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Configurable public download host. Not provisioned by this repository.
+  DOWNLOAD_BASE_URL: https://get.standeasyops.com
+  APT_BASE_URL: https://get.standeasyops.com/apt
+  # Set to "true" only after Azure Trusted Signing secrets exist in the
+  # `release` environment. The sign step below stays commented until then.
+  SIGNING_ENABLED: "false"
+
+jobs:
+  test:
+    name: Tests
+    uses: ./.github/workflows/ci.yml
+
+  linux-deb:
+    name: Ubuntu .deb (unsigned)
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf \
+            xdg-utils \
+            build-essential \
+            pkg-config
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # rust-toolchain action
+        with:
+          toolchain: "1.99.1"
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build unsigned Debian package
+        run: npm run tauri build -- --bundles deb
+
+      - name: Check .deb exists and is unsigned
+        run: |
+          set -euo pipefail
+          mapfile -t debs < <(find src-tauri/target/release/bundle/deb -name '*.deb' -type f)
+          if [[ ${#debs[@]} -eq 0 ]]; then
+            echo "No .deb produced under src-tauri/target/release/bundle/deb" >&2
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${debs[@]}" dist/
+          (cd dist && sha256sum ./*.deb > SHA256SUMS-linux.txt)
+          echo "Unsigned .deb artifacts:"
+          cat dist/SHA256SUMS-linux.txt
+          # No GPG/debsig step. Apt repo hosting is out of scope.
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: worker-dock-linux-deb
+          path: dist/
+          if-no-files-found: error
+
+  windows-msi:
+    name: Windows MSI (unsigned)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # rust-toolchain action
+        with:
+          toolchain: "1.99.1"
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build unsigned MSI
+        run: npm run tauri build -- --bundles msi
+
+      # Signing hook (disabled). When SIGNING_ENABLED is true and the `release`
+      # environment has Azure Trusted Signing secrets, sign the exe and MSI:
+      #
+      #   environment: release
+      #   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+      #   TRUSTED_SIGNING_ACCOUNT, TRUSTED_SIGNING_PROFILE, TRUSTED_SIGNING_ENDPOINT
+      #   timestamp: http://timestamp.acs.microsoft.com/
+      #
+      #   AzureSignTool sign -kvu <endpoint> -kvi <client> -kvs <secret> \
+      #     -kvt <tenant> -kvc <account> -d "worker-dock" -tr \
+      #     http://timestamp.acs.microsoft.com/ <exe-and-msi>
+      #
+      # Do not enable this until Stand Easy Ops has Trusted Signing. The
+      # certificate must never be written to the runner disk.
+
+      - name: Collect MSI and checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $msis = Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File
+          if (-not $msis) { throw "No .msi produced under src-tauri/target/release/bundle/msi" }
+          Copy-Item $msis.FullName dist/
+          Get-FileHash -Algorithm SHA256 (Get-ChildItem dist/*.msi) |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $_.Path.Split([char]0x5C)[-1] } |
+            Set-Content dist/SHA256SUMS-windows.txt
+          Get-Content dist/SHA256SUMS-windows.txt
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: worker-dock-windows-msi
+          path: dist/
+          if-no-files-found: error
+
+  draft-release:
+    name: Draft GitHub Release
+    needs: [linux-deb, windows-msi]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    # Attach `environment: release` here when signing secrets exist.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: worker-dock-linux-deb
+          path: dist
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: worker-dock-windows-msi
+          path: dist
+
+      - name: Write placeholder latest.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          python3 - "$version" "$DOWNLOAD_BASE_URL" <<'PY'
+          import json, sys
+          version, base = sys.argv[1], sys.argv[2].rstrip("/")
+          payload = {
+              "version": version,
+              "notes": "Unsigned tester build. Azure Trusted Signing, apt hosting, and winget publish are not enabled.",
+              "platforms": {
+                  "linux-x86_64": {
+                      "signature": "",
+                      "url": f"{base}/releases/v{version}/worker-dock_{version}_amd64.deb",
+                  },
+                  "windows-x86_64": {
+                      "signature": "",
+                      "url": f"{base}/releases/v{version}/worker-dock_{version}_x64_en-US.msi",
+                  },
+              },
+          }
+          with open("dist/latest.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2)
+              handle.write("\n")
+          PY
+          ls -l dist
+          cat dist/latest.json
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          draft: true
+          prerelease: true
+          name: worker-dock ${{ github.ref_name }} (unsigned)
+          body: |
+            Unsigned tester build of worker-dock.
+
+            - Linux: `.deb` (Ubuntu 22.04 glibc baseline). Does **not** include the official `agent` CLI.
+            - Windows: WiX MSI with embedded WebView2 bootstrapper. Built on `windows-latest`.
+            - Download URLs in `latest.json` use the placeholder host `https://get.standeasyops.com` (not provisioned).
+            - winget id **StandEasyOps.WorkerDock** is reserved in docs only — this release is not submitted to winget-pkgs.
+            - Azure Trusted Signing and apt GPG signing are hooks only. Do not treat these files as trusted.
+
+            Sideload for testers. SmartScreen and OS trust warnings are expected.
+          files: dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

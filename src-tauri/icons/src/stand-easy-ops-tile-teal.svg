@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Stand Easy Ops brand kit, 8 Oct 2026. Default tile: white figure on a solid brand-teal #0F4C5C tile. Icon tile: 100-unit square, corner radius 22, figure m = 10 (60% of tile width), inside 80% of the inscribed circle. Single colour: never two-tone; the head is never a different colour. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-labelledby="title">
+  <title id="title">Stand Easy Ops</title>
+  <path id="tile" d="M22 0L78 0C90.15 0 100 9.85 100 22L100 78C100 90.15 90.15 100 78 100L22 100C9.85 100 0 90.15 0 78L0 22C0 9.85 9.85 0 22 0Z" fill="#0F4C5C"/>
+  <path id="figure" d="M50 43L80 73L65.86 73L50 57.14L34.14 73L20 73L50 43ZM57.5 30.5C57.5 34.64 54.14 38 50 38C45.86 38 42.5 34.64 42.5 30.5C42.5 26.36 45.86 23 50 23C54.14 23 57.5 26.36 57.5 30.5Z" fill="#FFFFFF"/>
+</svg>

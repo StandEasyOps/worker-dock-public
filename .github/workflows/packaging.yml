@@ -1,0 +1,225 @@
+# Unsigned tester installers on pull requests and branch pushes.
+# Does not create a GitHub Release, sign, publish, or bundle the official CLI.
+# Tag `v*` draft releases stay in release.yml (PR #9).
+#
+# Each run stamps 0.1.<github.run_number> into tauri.conf.json, Cargo.toml,
+# package.json, and the winget manifests so a newer .deb / MSI upgrades the
+# previous one. Windows ProductVersion is major.minor.build, each field <= 65535.
+# The committed baseline stays 0.1.0. Artifact names include that stamped version.
+#
+# Action pins match .github/workflows/ci.yml and release.yml (DESIGN §11).
+# Bump the SHA and the version comment together.
+
+name: Packaging
+
+on:
+  pull_request:
+  push:
+    tags-ignore:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-deb:
+    name: Ubuntu .deb (unsigned)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf \
+            xdg-utils \
+            build-essential \
+            pkg-config
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # rust-toolchain action
+        with:
+          toolchain: "1.99.1"
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Stamp per-build version
+        run: |
+          set -euo pipefail
+          VERSION="0.1.${{ github.run_number }}"
+          node scripts/set-app-version.mjs --self-test
+          node scripts/set-app-version.mjs --check-sync
+          node scripts/set-app-version.mjs "$VERSION"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Stamped $VERSION (github.run_number=${{ github.run_number }})"
+
+      - name: Build unsigned Debian package
+        run: npm run tauri build -- --bundles deb
+
+      - name: Check .deb exists and is unsigned
+        run: |
+          set -euo pipefail
+          VERSION="${APP_VERSION:-0.1.${{ github.run_number }}}"
+          OS="${{ matrix.os }}"
+          mapfile -t debs < <(find src-tauri/target/release/bundle/deb -name '*.deb' -type f)
+          if [[ ${#debs[@]} -eq 0 ]]; then
+            echo "No .deb produced under src-tauri/target/release/bundle/deb" >&2
+            exit 1
+          fi
+          mkdir -p dist
+          printf '%s\n' "$VERSION" > dist/VERSION.txt
+          for deb in "${debs[@]}"; do
+            arch="$(basename "$deb" | sed -n 's/.*_\([^_]*\)\.deb$/\1/p')"
+            if [[ -z "$arch" ]]; then
+              arch="amd64"
+            fi
+            dest="dist/worker-dock_${VERSION}_${OS}_${arch}.deb"
+            cp "$deb" "$dest"
+          done
+          (cd dist && sha256sum ./*.deb VERSION.txt > SHA256SUMS-linux.txt)
+          echo "Unsigned .deb artifacts (${OS}, ${VERSION}). Official agent CLI is not bundled."
+          cat dist/SHA256SUMS-linux.txt
+          # No GPG/debsig step. Apt repo hosting is out of scope.
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: worker-dock-linux-deb-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error
+
+  windows-msi:
+    name: Windows MSI (unsigned)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # rust-toolchain action
+        with:
+          toolchain: "1.99.1"
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Stamp per-build version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="0.1.${{ github.run_number }}"
+          node scripts/set-app-version.mjs --self-test
+          node scripts/set-app-version.mjs --check-sync
+          node scripts/set-app-version.mjs "$VERSION"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Stamped $VERSION (github.run_number=${{ github.run_number }})"
+
+      - name: Build unsigned MSI
+        run: npm run tauri build -- --bundles msi
+
+      - name: Collect MSI, prove silent msiexec, fill winget manifests
+        shell: pwsh
+        run: |
+          $version = if ($env:APP_VERSION) { $env:APP_VERSION } else { "0.1.${{ github.run_number }}" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $msis = Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File
+          if (-not $msis) { throw "No .msi produced under src-tauri/target/release/bundle/msi" }
+          $destName = "worker-dock_${version}_x64_en-US.msi"
+          $dest = Join-Path dist $destName
+          Copy-Item $msis[0].FullName $dest
+          Set-Content dist/VERSION.txt $version
+          Get-FileHash -Algorithm SHA256 $dest |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $destName } |
+            Set-Content dist/SHA256SUMS-windows.txt
+          Write-Host "Unsigned WiX MSI $destName. Official agent CLI is not bundled."
+          Get-Content dist/SHA256SUMS-windows.txt
+          New-Item -ItemType Directory -Force -Path dist/winget | Out-Null
+          & packaging/winget/fill-and-verify.ps1 `
+            -MsiPath $dest `
+            -ManifestDir packaging/winget `
+            -OutDir dist/winget `
+            -ExpectedVersion $version
+
+      - name: Validate winget manifests
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pyyaml==6.0.3 jsonschema==4.26.0
+          python packaging/winget/validate-manifests.py dist/winget --msi (Get-Item dist/*.msi).FullName
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          if ($winget) {
+            winget validate --manifest dist/winget
+          } else {
+            Write-Host "winget.exe not on PATH; official JSON schema validation already ran."
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: worker-dock-windows-msi
+          path: dist/
+          if-no-files-found: error
+
+  winget-manifest:
+    name: winget manifest schema
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate committed winget YAML
+        run: |
+          python3 -m pip install --disable-pip-version-check --user pyyaml==6.0.3 jsonschema==4.26.0
+          python3 packaging/winget/validate-manifests.py packaging/winget
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Check committed version files stay in sync
+        run: |
+          node scripts/set-app-version.mjs --self-test
+          node scripts/set-app-version.mjs --check-sync

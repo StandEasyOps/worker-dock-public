@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "worker-dock",
+  "version": "0.1.0",
+  "identifier": "ops.standeasy.worker-dock",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "worker-dock",
+        "width": 960,
+        "height": 680,
+        "minWidth": 720,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "freezePrototype": true,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "msi"],
+    "publisher": "Stand Easy Ops",
+    "copyright": "Copyright © 2026 Stand Easy Ops",
+    "category": "DeveloperTool",
+    "shortDescription": "Install, run, and manage personal self-hosted workers",
+    "longDescription": "Desktop app by Stand Easy Ops that installs, runs, and manages a personal self-hosted worker. Works with the official Cursor CLI.",
+    "homepage": "https://github.com/StandEasyOps/worker-dock",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/worker-dock.desktop",
+        "postInstallScript": "../packaging/deb/postinst"
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": "en-US",
+        "upgradeCode": "33446f2e-dab1-5268-912f-3f5d1835af9c"
+      }
+    }
+  }
+}

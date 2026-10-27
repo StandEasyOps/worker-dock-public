@@ -1,0 +1,46 @@
+@import "@fontsource/bricolage-grotesque/600.css";
+@import "@fontsource/bricolage-grotesque/700.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+
+:root {
+  color-scheme: light;
+  --teal: #0f4c5c;
+  --ink: #12171f;
+  --paper: #f4f6f7;
+  --accent: #2a9d8f;
+  --border: #d5dee1;
+  --muted: #5b6770;
+  --font-display: "Bricolage Grotesque", "Segoe UI", sans-serif;
+  --font-sans: "IBM Plex Sans", "Segoe UI", "Ubuntu", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}

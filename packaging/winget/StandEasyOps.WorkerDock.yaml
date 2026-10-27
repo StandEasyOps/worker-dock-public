@@ -1,0 +1,7 @@
+# Version manifest for StandEasyOps.WorkerDock.
+# Do not submit to microsoft/winget-pkgs. Unsigned tester only.
+PackageIdentifier: StandEasyOps.WorkerDock
+PackageVersion: 0.1.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

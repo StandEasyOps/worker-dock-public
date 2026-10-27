@@ -1,0 +1,18 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name={{name}}
+Terminal=false
+Type=Application
+{{#if mime_type}}
+MimeType={{mime_type}}
+{{/if}}
+# GNOME session must not relaunch the UI after Quit. Worker autostart is the
+# systemd user unit, not this desktop file.
+X-GNOME-AutoRestart=false
+X-GNOME-Autostart-enabled=false

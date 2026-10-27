@@ -1,0 +1,41 @@
+{
+  "name": "worker-dock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop app by Stand Easy Ops to install, run, and manage personal self-hosted workers. Works with the official Cursor CLI.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri",
+    "set-version": "node scripts/set-app-version.mjs",
+    "capture-ui": "node scripts/capture-ui.mjs"
+  },
+  "license": "MIT",
+  "author": "Stand Easy Ops",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/StandEasyOps/worker-dock.git"
+  },
+  "dependencies": {
+    "@fontsource/bricolage-grotesque": "^5.2.10",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.65.1",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tauri-apps/cli": "^2",
+    "svelte": "^5.56.3",
+    "svelte-check": "^4.6.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}

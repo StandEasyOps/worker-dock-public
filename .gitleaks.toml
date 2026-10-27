@@ -1,0 +1,12 @@
+# Secret-scan allowlist. Default gitleaks rules still apply.
+title = "worker-dock"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Lockfiles (checksums trip generic secret rules)"
+paths = [
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)src-tauri/Cargo\.lock$''',
+]

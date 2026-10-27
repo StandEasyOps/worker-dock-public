@@ -1,0 +1,23 @@
+# Default locale manifest for StandEasyOps.WorkerDock.
+# Do not submit to microsoft/winget-pkgs. Unsigned tester only.
+PackageIdentifier: StandEasyOps.WorkerDock
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Stand Easy Ops
+PublisherUrl: https://github.com/StandEasyOps
+PublisherSupportUrl: https://github.com/StandEasyOps/worker-dock/issues
+PackageName: worker-dock
+PackageUrl: https://github.com/StandEasyOps/worker-dock
+License: MIT
+LicenseUrl: https://github.com/StandEasyOps/worker-dock/blob/main/LICENSE
+Copyright: Copyright © 2026 Stand Easy Ops
+ShortDescription: Install, run, and manage personal self-hosted workers
+Description: Desktop app by Stand Easy Ops that installs, runs, and manages a personal self-hosted worker. Works with the official Cursor CLI.
+Moniker: worker-dock
+Tags:
+  - worker
+  - self-hosted
+  - desktop
+ReleaseNotes: Unsigned tester MSI. Per-machine scope. Not submitted to winget-pkgs.
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

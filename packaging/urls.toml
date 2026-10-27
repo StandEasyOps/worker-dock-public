@@ -1,0 +1,12 @@
+# Public download and apt hosts for worker-dock artifacts.
+# These are placeholders. This repository does not provision DNS or hosting.
+#
+# Override in GitHub Actions via DOWNLOAD_BASE_URL / APT_BASE_URL
+# (see .github/workflows/release.yml).
+
+download_base = "https://get.standeasyops.com"
+apt_base = "https://get.standeasyops.com/apt"
+
+# Reserved winget identifier. Documented only — do not publish to
+# microsoft/winget-pkgs until artifacts are signed and the URL is crawler-reachable.
+winget_id = "StandEasyOps.WorkerDock"

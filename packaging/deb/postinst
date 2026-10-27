@@ -1,0 +1,100 @@
+#!/bin/sh
+# Stop a leftover worker-dock UI after apt install/upgrade so GNOME does not
+# keep the previous version's tray icon. Single-instance would otherwise
+# attach a new launch to that stale process.
+#
+# Only signal worker-dock processes owned by the invoking desktop user
+# (numeric uid). Never other users' sessions. Never uid 0.
+#
+# If this root maintainer script cannot identify that user (typical for
+# unattended-upgrades), leave running windows alone. The new binary is
+# picked up on the next launch.
+#
+# Do not touch worker-dock-run and do not restart systemd user units —
+# those stay per-user and keep serving until that user stops them.
+set -e
+
+euid() {
+  if [ "${WORKER_DOCK_EUID_OVERRIDE+set}" = set ]; then
+    printf '%s\n' "$WORKER_DOCK_EUID_OVERRIDE"
+    return 0
+  fi
+  id -u
+}
+
+# Numeric uid of the desktop user who invoked the install, or empty.
+# Never prints 0.
+desktop_uid() {
+  uid="$(euid)"
+  case "$uid" in
+    ''|*[!0-9]*) ;;
+    0) ;;
+    *)
+      printf '%s\n' "$uid"
+      return 0
+      ;;
+  esac
+
+  for raw in "${SUDO_UID-}" "${PKEXEC_UID-}"; do
+    case "$raw" in
+      ''|*[!0-9]*|0) ;;
+      *)
+        printf '%s\n' "$raw"
+        return 0
+        ;;
+    esac
+  done
+
+  user="${SUDO_USER-}"
+  case "$user" in
+    ''|root) return 1 ;;
+  esac
+  case "$user" in
+    *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  if [ "${#user}" -lt 1 ] || [ "${#user}" -gt 64 ]; then
+    return 1
+  fi
+
+  resolved="$(id -u -- "$user" 2>/dev/null || true)"
+  case "$resolved" in
+    ''|*[!0-9]*|0) return 1 ;;
+    *)
+      printf '%s\n' "$resolved"
+      return 0
+      ;;
+  esac
+}
+
+run_pkill() {
+  if [ -n "${WORKER_DOCK_PKILL:-}" ]; then
+    "$WORKER_DOCK_PKILL" "$@"
+    return 0
+  fi
+  command -v pkill >/dev/null 2>&1 || return 0
+  pkill "$@" >/dev/null 2>&1 || true
+}
+
+stop_stale_ui() {
+  uid="$(desktop_uid || true)"
+  case "$uid" in
+    ''|*[!0-9]*|0)
+      echo "worker-dock: upgrade left running windows alone (could not identify the desktop user); new binary applies on next launch" >&2
+      return 0
+      ;;
+  esac
+  # Exact comm match: worker-dock, not worker-dock-run.
+  run_pkill -u "$uid" -x worker-dock || true
+}
+
+if [ "${WORKER_DOCK_SOURCED-}" = 1 ]; then
+  return 0
+fi
+
+case "$1" in
+  configure)
+    stop_stale_ui
+    ;;
+esac
+
+exit 0
