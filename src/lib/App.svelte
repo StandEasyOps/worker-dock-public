@@ -46,6 +46,7 @@
   let copied = $state(false);
   let copiedDiagnostics = $state(false);
   let message = $state<string | null>(null);
+  let folderError = $state<string | null>(null);
   let restartOpen = $state(false);
   let resetOpen = $state(false);
   let listenAuth: UnlistenFn | undefined;
@@ -236,39 +237,72 @@
       | "worker_restart_direct"
       | "worker_reset_identity",
     extra?: Record<string, unknown>,
-  ): Promise<void> {
+    keepDraftName = false,
+  ): Promise<boolean> {
     if (preview) {
       message = `Preview only — ${command} is mocked.`;
-      return;
+      return false;
     }
     working = true;
     message = null;
     try {
       const next = await invoke<WorkerSnapshot>(command, extra);
+      const draftName = name;
       applySnapshot(next);
+      if (keepDraftName) {
+        name = draftName;
+      }
       await syncTray();
+      return true;
     } catch (error) {
       message = String(error);
+      return false;
     } finally {
       working = false;
     }
   }
 
-  async function save(thenRestart: boolean): Promise<void> {
+  async function save(
+    thenRestart: boolean,
+    persistName = name,
+    keepDraftName = false,
+  ): Promise<boolean> {
     const running = isRunningHeadline(asHeadline(worker?.runtime.headline ?? "not_ready"));
     const dirtyNow =
-      name.trim() !== (worker?.name ?? "") ||
+      persistName.trim() !== (worker?.name ?? "") ||
       !sameFolders(
         folders.map((folder) => folder.path),
         worker?.workerDirs.map((folder) => folder.path) ?? [],
       );
     if (preview) {
       message = "Preview only — save is mocked.";
+      return false;
+    }
+    const ok = await runWorker(
+      "worker_save",
+      { request: { name: persistName, workerDirs: folders.map((f) => f.path) } },
+      keepDraftName,
+    );
+    if (ok && (thenRestart || (running && dirtyNow))) {
+      restartOpen = true;
+    }
+    return ok;
+  }
+
+  async function commitFolders(next: WorkerDir[]): Promise<void> {
+    if (preview || !isTauri()) {
+      folders = next;
       return;
     }
-    await runWorker("worker_save", { request: { name, workerDirs: folders.map((f) => f.path) } });
-    if (thenRestart || (running && dirtyNow)) {
-      restartOpen = true;
+    const saved = (worker?.workerDirs ?? []).map((folder) => ({ ...folder }));
+    const persistName = worker ? worker.name : snapshot?.suggestedName || name;
+    folders = next;
+    folderError = null;
+    const ok = await save(false, persistName, true);
+    if (!ok) {
+      folders = saved;
+      folderError = message;
+      message = null;
     }
   }
 
@@ -282,10 +316,10 @@
       if (!picked || folders.some((folder) => folder.path === picked)) {
         return;
       }
-      folders = [
+      await commitFolders([
         ...folders,
         { path: picked, exists: true, isDirectory: true, gitRemote: null, hasRemote: undefined },
-      ];
+      ]);
     } catch (error) {
       message = String(error);
     }
@@ -449,6 +483,7 @@
           {folders}
           {working}
           {message}
+          {folderError}
           {mocked}
           focusName={preview === "name"}
           onName={(value) => (name = value)}
@@ -456,7 +491,7 @@
           onSave={() => void save(false)}
           onBrowse={() => void browse()}
           onRemove={(index) => {
-            folders = folders.filter((_, current) => current !== index);
+            void commitFolders(folders.filter((_, current) => current !== index));
           }}
           onInstall={() => void runWorker("worker_install")}
           onUninstall={() => void runWorker("worker_uninstall")}
