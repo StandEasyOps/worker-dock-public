@@ -17,9 +17,6 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
-  # DRY-RUN: pull_request stamps v0.2.0 and skips draft-release (ref is not a tag).
-  # Remove this trigger after the proof run.
-  pull_request:
 
 permissions:
   contents: read
@@ -79,8 +76,8 @@ jobs:
       - name: Stamp release version from tag
         uses: ./.github/actions/stamp-release-version
         with:
-          ref-name: ${{ case(github.event_name == 'pull_request', 'v0.2.0', github.ref_name) }}
-          ref: ${{ case(github.event_name == 'pull_request', 'refs/tags/v0.2.0', github.ref) }}
+          ref-name: ${{ github.ref_name }}
+          ref: ${{ github.ref }}
 
       - name: Build unsigned Debian package
         run: npm run tauri build -- --bundles deb
@@ -146,8 +143,8 @@ jobs:
       - name: Stamp release version from tag
         uses: ./.github/actions/stamp-release-version
         with:
-          ref-name: ${{ case(github.event_name == 'pull_request', 'v0.2.0', github.ref_name) }}
-          ref: ${{ case(github.event_name == 'pull_request', 'refs/tags/v0.2.0', github.ref) }}
+          ref-name: ${{ github.ref_name }}
+          ref: ${{ github.ref }}
 
       - name: Build unsigned MSI
         run: npm run tauri build -- --bundles msi
