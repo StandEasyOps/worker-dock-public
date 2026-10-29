@@ -69,7 +69,8 @@ NoNewPrivileges=yes\n\
 RestrictRealtime=yes\n\
 RestrictSUIDSGID=yes\n\
 LockPersonality=yes\n\
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n\
+# AF_NETLINK: the official CLI enumerates network interfaces (getifaddrs).\n\
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\n\
 SystemCallArchitectures=native\n";
 
 /// Rewrite the installed template so an upgraded app drops broken hardening
@@ -294,7 +295,8 @@ mod tests {
         assert!(text.contains("RestrictRealtime=yes"));
         assert!(text.contains("RestrictSUIDSGID=yes"));
         assert!(text.contains("LockPersonality=yes"));
-        assert!(text.contains("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"));
+        assert!(text.contains("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"));
+        assert!(text.contains("enumerates network interfaces"));
         assert!(text.contains("SystemCallArchitectures=native"));
         for forbidden in [
             "CapabilityBoundingSet=",
@@ -406,6 +408,151 @@ mod tests {
             show_text.contains("Result=success") || show_text.contains("ExecMainStatus=0"),
             "expected a clean stub start, got: {show_text}"
         );
+    }
+
+    /// Node's `os.networkInterfaces()` uses getifaddrs, which opens a netlink
+    /// socket. The official CLI exits EAFNOSUPPORT when the user unit omits
+    /// `AF_NETLINK`. CI sets `WORKER_DOCK_REQUIRE_SYSTEMD_USER=1`.
+    #[cfg(unix)]
+    #[test]
+    fn generated_address_families_allow_node_network_interfaces() {
+        let required = std::env::var("WORKER_DOCK_REQUIRE_SYSTEMD_USER")
+            .ok()
+            .is_some_and(|value| value == "1");
+        let unit = render_unit("/usr/bin/worker-dock-run").unwrap();
+        let families = restrict_address_families(&unit);
+        for family in ["AF_UNIX", "AF_INET", "AF_INET6", "AF_NETLINK"] {
+            assert!(
+                families.split_whitespace().any(|item| item == family),
+                "RestrictAddressFamilies missing {family}: {families}"
+            );
+        }
+        if !user_systemd_available() {
+            if required {
+                panic!(
+                    "user systemd is required (WORKER_DOCK_REQUIRE_SYSTEMD_USER=1) but systemctl --user is not ready"
+                );
+            }
+            return;
+        }
+        let Some(node) = find_node() else {
+            if required {
+                panic!(
+                    "node is required (WORKER_DOCK_REQUIRE_SYSTEMD_USER=1) to run os.networkInterfaces() under RestrictAddressFamilies"
+                );
+            }
+            return;
+        };
+
+        let blocked = run_node_network_interfaces(
+            &node,
+            "AF_UNIX AF_INET AF_INET6",
+            &format!("worker-dock-afcheck-deny-{}", std::process::id()),
+        );
+        let blocked_text = output_text(&blocked);
+        assert!(
+            !blocked.status.success(),
+            "address families without AF_NETLINK unexpectedly allowed os.networkInterfaces(); sandbox was not applied: {blocked_text}"
+        );
+        assert!(
+            blocked_text.contains("uv_interface_addresses")
+                || blocked_text.contains("EAFNOSUPPORT")
+                || blocked_text.contains("error 97"),
+            "expected getifaddrs EAFNOSUPPORT without AF_NETLINK, got: {blocked_text}"
+        );
+
+        let allowed = run_node_network_interfaces(
+            &node,
+            families,
+            &format!("worker-dock-afcheck-allow-{}", std::process::id()),
+        );
+        let allowed_text = output_text(&allowed);
+        assert!(
+            allowed.status.success(),
+            "os.networkInterfaces() failed under RestrictAddressFamilies={families}: {allowed_text}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn restrict_address_families(unit: &str) -> &str {
+        unit.lines()
+            .find_map(|line| line.strip_prefix("RestrictAddressFamilies="))
+            .expect("generated unit sets RestrictAddressFamilies")
+    }
+
+    #[cfg(unix)]
+    fn find_node() -> Option<PathBuf> {
+        let path_var = std::env::var_os("PATH")?;
+        for dir in std::env::split_paths(&path_var) {
+            for name in ["node", "nodejs"] {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(unix)]
+    fn output_text(output: &std::process::Output) -> String {
+        format!(
+            "status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    }
+
+    #[cfg(unix)]
+    fn run_node_network_interfaces(
+        node: &std::path::Path,
+        families: &str,
+        unit: &str,
+    ) -> std::process::Output {
+        // Do not print interface addresses; success is an empty exit 0.
+        let script = "const nics=require('os').networkInterfaces();if(!nics||Object.keys(nics).length<1)process.exit(2);";
+        let args = vec![
+            "--wait".to_string(),
+            "--pipe".to_string(),
+            "--collect".to_string(),
+            format!("--unit={unit}"),
+            format!("--property=RestrictAddressFamilies={families}"),
+            node.display().to_string(),
+            "-e".to_string(),
+            script.to_string(),
+        ];
+        user_systemd_run(&args)
+    }
+
+    #[cfg(unix)]
+    fn user_systemd_run(args: &[String]) -> std::process::Output {
+        let direct = systemd_run_output(&["--user".to_string()], args);
+        if let Ok(output) = direct {
+            if output.status.success()
+                || output.status.code().is_some() && !looks_like_missing_bus(&output)
+            {
+                return output;
+            }
+        }
+        let user = std::env::var("USER").unwrap_or_default();
+        let machine = format!("--machine={user}@");
+        systemd_run_output(&["--user".to_string(), machine], args)
+            .unwrap_or_else(|error| panic!("systemd-run --user unavailable: {error}"))
+    }
+
+    #[cfg(unix)]
+    fn systemd_run_output(
+        prefix: &[String],
+        args: &[String],
+    ) -> std::io::Result<std::process::Output> {
+        let mut command = Command::new("timeout");
+        command.arg("30").arg("systemd-run");
+        command.args(prefix);
+        command.args(args);
+        command.env("SYSTEMD_COLORS", "0");
+        command.env("SYSTEMD_PAGER", "");
+        command.output()
     }
 
     #[cfg(unix)]

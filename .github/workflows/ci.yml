@@ -109,7 +109,8 @@ jobs:
             pkg-config \
             dbus \
             dbus-user-session \
-            systemd-container
+            systemd-container \
+            nodejs
 
       - name: Start user systemd
         run: |
@@ -152,7 +153,7 @@ jobs:
 
       - name: Start generated user unit
         working-directory: src-tauri
-        run: cargo test --lib generated_user_unit_starts_under_user_systemd -- --nocapture
+        run: cargo test --lib -- --nocapture --test-threads=1 generated_user_unit_starts_under_user_systemd generated_address_families_allow_node_network_interfaces
 
   security:
     name: Security audits

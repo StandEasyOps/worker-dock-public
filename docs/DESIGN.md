@@ -169,7 +169,8 @@ NoNewPrivileges=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK: the official CLI enumerates network interfaces (getifaddrs).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
 # User-unit only: do not set CapabilityBoundingSet=/AmbientCapabilities=
 # (status 218), ProtectSystem=strict (blocks $HOME workspaces), or PrivateTmp
