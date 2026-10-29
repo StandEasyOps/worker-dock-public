@@ -4,11 +4,12 @@
  * in lockstep: package.json, package-lock.json, Cargo.toml, Cargo.lock,
  * tauri.conf.json, and the winget tester manifests.
  *
- * Packaging CI calls this with 0.1.<github.run_number> so each .deb / MSI
- * upgrades the previous one. Release CI resolves a vMAJOR.MINOR.PATCH tag
- * via --release-tag and stamps that version. The committed baseline stays 0.1.0.
+ * Packaging CI calls this with 0.1.<github.run_number>. Release tags start at
+ * v0.2.0 so a release always upgrades over those builds. The committed
+ * baseline stays 0.1.0.
  *
- * Windows WiX MajorUpgrade accepts only major.minor.build, each field <= 65535.
+ * Windows MSI ProductVersion is major.minor.build: major and minor <= 255,
+ * patch <= 65535.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -16,7 +17,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const MSI_FIELD_MAX = 65535;
+const MSI_MAJOR_MINOR_MAX = 255;
+const MSI_PATCH_MAX = 65535;
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/;
 
 const PATHS = {
@@ -38,10 +40,16 @@ export function parseMsiProductVersion(raw) {
     );
   }
   const parts = match.slice(1).map((part) => Number(part));
-  if (parts.some((value) => !Number.isInteger(value) || value > MSI_FIELD_MAX)) {
-    throw new Error(`each version field must be an integer <= ${MSI_FIELD_MAX}, got ${raw}`);
+  const [major, minor, build] = parts;
+  if (parts.some((value) => !Number.isInteger(value) || value < 0)) {
+    throw new Error(`version fields must be integers, got ${raw}`);
   }
-  return { major: parts[0], minor: parts[1], build: parts[2], text: `${parts[0]}.${parts[1]}.${parts[2]}` };
+  if (major > MSI_MAJOR_MINOR_MAX || minor > MSI_MAJOR_MINOR_MAX || build > MSI_PATCH_MAX) {
+    throw new Error(
+      `MSI ProductVersion requires major and minor <= ${MSI_MAJOR_MINOR_MAX} and patch <= ${MSI_PATCH_MAX}, got ${raw}`,
+    );
+  }
+  return { major, minor, build, text: `${major}.${minor}.${build}` };
 }
 
 export function versionFromReleaseRef(refName, ref) {
@@ -55,15 +63,21 @@ export function versionFromReleaseRef(refName, ref) {
   if (!/^v\d+\.\d+\.\d+$/.test(name)) {
     throw new Error(`tag must match ^v\\d+\\.\\d+\\.\\d+$, got ${JSON.stringify(name)}`);
   }
-  let version;
+  let parsed;
   try {
-    version = parseMsiProductVersion(name.slice(1)).text;
+    parsed = parseMsiProductVersion(name.slice(1));
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`tag ${JSON.stringify(name)}: ${detail}`);
   }
+  const version = parsed.text;
   if (`v${version}` !== name) {
     throw new Error(`tag ${JSON.stringify(name)} must equal the stamped version v${version}`);
+  }
+  if (parsed.major === 0 && parsed.minor < 2) {
+    throw new Error(
+      `release tags start at v0.2.0 so they upgrade over packaging builds (0.1.<run_number>); got ${JSON.stringify(name)}`,
+    );
   }
   return version;
 }
@@ -186,7 +200,21 @@ function selfTest() {
   if (ok.text !== "0.1.42" || ok.build !== 42) {
     throw new Error("parseMsiProductVersion failed on 0.1.42");
   }
-  const rejects = ["0.1", "0.1.2.3", "v0.1.2", "0.1.65536", "latest", "0.1.0-beta"];
+  const atMsiLimit = parseMsiProductVersion("255.255.65535");
+  if (atMsiLimit.major !== 255 || atMsiLimit.minor !== 255 || atMsiLimit.build !== 65535) {
+    throw new Error("parseMsiProductVersion failed on 255.255.65535");
+  }
+  const rejects = [
+    "0.1",
+    "0.1.2.3",
+    "v0.1.2",
+    "0.1.65536",
+    "256.0.0",
+    "0.256.0",
+    "255.255.65536",
+    "latest",
+    "0.1.0-beta",
+  ];
   for (const value of rejects) {
     let threw = false;
     try {
@@ -206,32 +234,36 @@ function selfTest() {
   if (!stamped.includes("version = \"0.1.9\"") || !stamped.includes("\r\n")) {
     throw new Error("Cargo.lock stamp must keep CRLF and update the version");
   }
-  const releaseOk = versionFromReleaseRef("v0.1.26", "refs/tags/v0.1.26");
-  if (releaseOk !== "0.1.26") {
-    throw new Error(`v0.1.26 resolved to ${releaseOk}`);
+  const releaseOk = versionFromReleaseRef("v0.2.0", "refs/tags/v0.2.0");
+  if (releaseOk !== "0.2.0") {
+    throw new Error(`v0.2.0 resolved to ${releaseOk}`);
   }
-  const atLimit = versionFromReleaseRef("v65535.65535.65535", "refs/tags/v65535.65535.65535");
-  if (atLimit !== "65535.65535.65535") {
+  const atLimit = versionFromReleaseRef("v255.255.65535", "refs/tags/v255.255.65535");
+  if (atLimit !== "255.255.65535") {
     throw new Error(`MSI field limit rejected a legal tag: ${atLimit}`);
   }
   const releaseRejects = [
-    ["v1.2", "refs/tags/v1.2"],
-    ["v0.1.26-rc1", "refs/tags/v0.1.26-rc1"],
-    ["v70000.0.0", "refs/tags/v70000.0.0"],
-    ["v65536.0.0", "refs/tags/v65536.0.0"],
-    ["v01.2.3", "refs/tags/v01.2.3"],
-    ["main", "refs/heads/main"],
-    ["v0.1.26", "refs/heads/v0.1.26"],
-    ["v0.1.26", "refs/tags/v0.1.27"],
+    ["v1.2", "refs/tags/v1.2", ""],
+    ["v0.1.26-rc1", "refs/tags/v0.1.26-rc1", ""],
+    ["v0.1.26", "refs/tags/v0.1.26", "0.2.0"],
+    ["v0.1.65535", "refs/tags/v0.1.65535", "0.2.0"],
+    ["v256.0.0", "refs/tags/v256.0.0", "255"],
+    ["v0.256.0", "refs/tags/v0.256.0", "255"],
+    ["v70000.0.0", "refs/tags/v70000.0.0", "255"],
+    ["v65536.0.0", "refs/tags/v65536.0.0", "255"],
+    ["v01.2.3", "refs/tags/v01.2.3", ""],
+    ["main", "refs/heads/main", ""],
+    ["v0.2.0", "refs/heads/v0.2.0", ""],
+    ["v0.2.0", "refs/tags/v0.2.1", ""],
   ];
-  for (const [refName, ref] of releaseRejects) {
+  for (const [refName, ref, needle] of releaseRejects) {
     let message = "";
     try {
       versionFromReleaseRef(refName, ref);
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    if (!message.includes(refName)) {
+    if (!message.includes(refName) || (needle && !message.includes(needle))) {
       throw new Error(
         `expected a clear rejection for ${refName} (${ref}), got ${JSON.stringify(message)}`,
       );
