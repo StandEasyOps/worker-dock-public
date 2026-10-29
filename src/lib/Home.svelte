@@ -251,18 +251,18 @@
         <h2 id="folders-heading">Repo folders</h2>
         <p>Each local folder is a <code>--worker-dir</code>. First folder is assignment identity.</p>
       </div>
-      <button type="button" class="secondary" disabled={working} onclick={onBrowse}>Add folder</button>
+      <button id="add-folder" type="button" class="secondary" disabled={working} onclick={onBrowse}>Add folder</button>
     </div>
     {#if folderError}
-      <p class="banner" role="alert">{folderError}</p>
+      <p id="folder-error" class="banner" role="alert" tabindex="-1">{folderError}</p>
     {/if}
     {#if folders.length === 0}
-      <div class="empty" data-state="folders-empty">
+      <div class="empty" data-state="folders-empty" aria-describedby={folderError ? "folder-error" : undefined}>
         <p>No folders yet.</p>
         <p class="hint">Add a local checkout. The native folder picker is used — not a typed path.</p>
       </div>
     {:else}
-      <ul class="folders">
+      <ul id="repo-folders" class="folders" aria-describedby={folderError ? "folder-error" : undefined}>
         {#each folders as folder, index (folder.path)}
           <li>
             <div>
@@ -277,7 +277,7 @@
                 {/if}
               </span>
             </div>
-            <button type="button" class="ghost" disabled={working} onclick={() => onRemove(index)}>Remove</button>
+            <button type="button" class="ghost" data-remove disabled={working} onclick={() => onRemove(index)}>Remove</button>
           </li>
         {/each}
       </ul>
