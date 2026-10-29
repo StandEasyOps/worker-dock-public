@@ -4,7 +4,8 @@
 #
 # Each run stamps 0.1.<github.run_number> into tauri.conf.json, Cargo.toml,
 # package.json, and the winget manifests so a newer .deb / MSI upgrades the
-# previous one. Windows ProductVersion is major.minor.build, each field <= 65535.
+# previous one. Windows ProductVersion is major.minor.build: major and minor
+# <= 255, patch <= 65535. Release tags start at v0.2.0, above these builds.
 # The committed baseline stays 0.1.0. Artifact names include that stamped version.
 #
 # Action pins match .github/workflows/ci.yml and release.yml (DESIGN §11).

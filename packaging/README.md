@@ -14,15 +14,17 @@ Triggers:
 
 - `CI` on every pull request: `cargo test` (Linux + Windows) and `npm run check` / `build` (Linux).
 - `Packaging` on pull requests, non-tag pushes, and `workflow_dispatch`: unsigned `.deb` on `ubuntu-22.04` and `ubuntu-24.04`, plus a WiX MSI on `windows-latest`. Uploads GitHub Actions artifacts only (`worker-dock-linux-deb-ubuntu-22.04`, `worker-dock-linux-deb-ubuntu-24.04`, `worker-dock-windows-msi`). Does **not** create a GitHub Release, sign, or publish.
-- `Release` on tag `vX.Y.Z` (and `workflow_dispatch`): tests, then unsigned bundles, then a **draft** GitHub Release (tags only).
+- `Release` on tag `v[0-9]+.[0-9]+.[0-9]+` (at least `v0.2.0`), and on `workflow_dispatch` of that tag ref: tests, then unsigned bundles, then a **draft** GitHub Release. `workflow_dispatch` on a branch fails the stamp step.
 
-Tag version must match `src-tauri/tauri.conf.json` / `package.json` (committed baseline `0.1.0` → `v0.1.0`).
+The release tag is stamped before `tauri build`. It must be `vMAJOR.MINOR.PATCH` with major and minor ≤ 255, patch ≤ 65535, and the tag text must be `v` plus that version (`v0.2.0` is valid; `v0.1.26`, `v01.2.3`, and `v256.0.0` are not). The committed baseline stays `0.1.0`. Tag `v0.2.0` publishes `worker-dock_0.2.0_amd64.deb` and `worker-dock_0.2.0_x64_en-US.msi`; `latest.json` uses those names.
 
 ## Versioning
 
-Packaging CI stamps **`0.1.<github.run_number>`** into `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the winget `PackageVersion` fields before `tauri build`. That is a valid Windows WiX `MajorUpgrade` product version (`major.minor.build`, each field ≤ 65535). The pinned `UpgradeCode` `{33446F2E-DAB1-5268-912F-3F5D1835AF9C}` does not change. A newer run therefore upgrades an older tester `.deb` / MSI.
+Packaging CI stamps **`0.1.<github.run_number>`** into `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the winget `PackageVersion` fields before `tauri build`. That is a valid Windows MSI `ProductVersion` (`major.minor.build`, major and minor ≤ 255, patch ≤ 65535). The pinned `UpgradeCode` `{33446F2E-DAB1-5268-912F-3F5D1835AF9C}` does not change. A newer packaging run therefore upgrades an older tester `.deb` / MSI.
 
-The committed files stay at `0.1.0`. Stamp locally with `npm run set-version -- 0.1.N`. Artifact names include the stamped version, for example `worker-dock_0.1.N_ubuntu-24.04_amd64.deb` and `worker-dock_0.1.N_x64_en-US.msi`. Settings → About and the tray tooltip show the same version.
+Release tags start at **`v0.2.0`**. They stay above every packaging build (`0.1.<run_number>`), so a release upgrades a packaging install that shares that `UpgradeCode`. Release CI stamps the tag (`v0.2.0` → `0.2.0`) and uploads `worker-dock_<version>_amd64.deb` and `worker-dock_<version>_x64_en-US.msi`.
+
+The committed files stay at `0.1.0`. Stamp locally with `npm run set-version -- 0.1.N`. Packaging artifact names include the stamped version, for example `worker-dock_0.1.N_ubuntu-24.04_amd64.deb` and `worker-dock_0.1.N_x64_en-US.msi`. Settings → About and the tray tooltip show the same version.
 
 ## Public URLs (placeholders)
 
@@ -45,7 +47,7 @@ deb [signed-by=/usr/share/keyrings/worker-dock.gpg] https://get.standeasyops.com
 
 Reserved id: **`StandEasyOps.WorkerDock`**.
 
-Multi-file tester manifests live in [`winget/`](winget/) (`version`, `installer`, `defaultLocale`). The MSI is **per-machine** (`ALLUSERS=1`, manifest `Scope: machine`). Silent install/uninstall is `msiexec /qn /norestart`. `UpgradeCode` `{33446F2E-DAB1-5268-912F-3F5D1835AF9C}` is pinned in `src-tauri/tauri.conf.json`. Do **not** submit these files to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs): the MSI is unsigned and `InstallerUrl` is the placeholder host `https://get.standeasyops.com`. Packaging CI fills `InstallerSha256` / `ProductCode` into the `worker-dock-windows-msi` artifact and validates the official 1.6.0 JSON schema (`winget validate` when available).
+Multi-file tester manifests live in [`winget/`](winget/) (`version`, `installer`, `defaultLocale`). The MSI is **per-machine** (`ALLUSERS=1`, manifest `Scope: machine`). Silent install/uninstall is `msiexec /qn /norestart`. `UpgradeCode` `{33446F2E-DAB1-5268-912F-3F5D1835AF9C}` is pinned in `src-tauri/tauri.conf.json`. Do **not** submit these files to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs): the MSI is unsigned and `InstallerUrl` is the placeholder host `https://get.standeasyops.com`. Packaging CI fills `InstallerSha256` / `ProductCode` into the `worker-dock-windows-msi` artifact and validates the official 1.6.0 JSON schema (`winget validate` when available). Release stamps `PackageVersion` in the job workspace and does not upload the winget manifests. The committed `InstallerSha256` stays the zero placeholder, and those YAML files are not release assets.
 
 ## Signing hook (disabled)
 

@@ -1,0 +1,32 @@
+name: Stamp release version
+description: Validate a vX.Y.Z release tag and stamp it into the version files.
+
+inputs:
+  ref-name:
+    description: github.ref_name for the release tag
+    required: true
+  ref:
+    description: github.ref for the release tag
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Stamp release version from tag
+      shell: bash
+      env:
+        RELEASE_REF_NAME: ${{ inputs.ref-name }}
+        RELEASE_REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        node scripts/set-app-version.mjs --self-test
+        node scripts/set-app-version.mjs --check-sync
+        VERSION="$(node scripts/set-app-version.mjs --release-tag | tr -d '\r')"
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "refused to stamp unexpected version: ${VERSION}" >&2
+          exit 1
+        fi
+        node scripts/set-app-version.mjs "$VERSION"
+        node scripts/set-app-version.mjs --check-sync "$VERSION"
+        echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
+        echo "Stamped ${VERSION} from ${RELEASE_REF_NAME}"
