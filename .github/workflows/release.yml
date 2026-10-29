@@ -5,6 +5,9 @@
 #
 # Download/apt URLs are placeholders from packaging/urls.toml
 # (https://get.standeasyops.com). This workflow does not provision DNS or hosting.
+#
+# The tag (vMAJOR.MINOR.PATCH, each field <= 65535) is stamped before bundling.
+# workflow_dispatch must run on that tag ref; a branch ref fails the stamp step.
 
 name: Release
 
@@ -69,20 +72,52 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Stamp release version from tag
+        shell: bash
+        env:
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/set-app-version.mjs --self-test
+          node scripts/set-app-version.mjs --check-sync
+          VERSION="$(node scripts/set-app-version.mjs --release-tag | tr -d '\r')"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refused to stamp unexpected version: ${VERSION}" >&2
+            exit 1
+          fi
+          node scripts/set-app-version.mjs "$VERSION"
+          node scripts/set-app-version.mjs --check-sync "$VERSION"
+          echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Stamped ${VERSION} from ${RELEASE_REF_NAME}"
+
       - name: Build unsigned Debian package
         run: npm run tauri build -- --bundles deb
 
       - name: Check .deb exists and is unsigned
         run: |
           set -euo pipefail
-          mapfile -t debs < <(find src-tauri/target/release/bundle/deb -name '*.deb' -type f)
-          if [[ ${#debs[@]} -eq 0 ]]; then
-            echo "No .deb produced under src-tauri/target/release/bundle/deb" >&2
+          version="${APP_VERSION:?APP_VERSION is not set}"
+          expected="worker-dock_${version}_amd64.deb"
+          mapfile -t found < <(find src-tauri/target/release/bundle/deb -name '*.deb' -type f | sort)
+          match=()
+          for deb in "${found[@]}"; do
+            if [[ "$(basename "$deb")" == "$expected" ]]; then
+              match+=("$deb")
+            fi
+          done
+          if [[ ${#match[@]} -ne 1 ]]; then
+            echo "expected one ${expected} under src-tauri/target/release/bundle/deb" >&2
+            if [[ ${#found[@]} -eq 0 ]]; then
+              echo "found: (none)" >&2
+            else
+              printf 'found: %s\n' "${found[@]}" >&2
+            fi
             exit 1
           fi
           mkdir -p dist
-          cp "${debs[@]}" dist/
-          (cd dist && sha256sum ./*.deb > SHA256SUMS-linux.txt)
+          cp "${match[0]}" "dist/${expected}"
+          (cd dist && sha256sum -- "./${expected}" > SHA256SUMS-linux.txt)
           echo "Unsigned .deb artifacts:"
           cat dist/SHA256SUMS-linux.txt
           # No GPG/debsig step. Apt repo hosting is out of scope.
@@ -117,6 +152,25 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Stamp release version from tag
+        shell: bash
+        env:
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/set-app-version.mjs --self-test
+          node scripts/set-app-version.mjs --check-sync
+          VERSION="$(node scripts/set-app-version.mjs --release-tag | tr -d '\r')"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refused to stamp unexpected version: ${VERSION}" >&2
+            exit 1
+          fi
+          node scripts/set-app-version.mjs "$VERSION"
+          node scripts/set-app-version.mjs --check-sync "$VERSION"
+          echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Stamped ${VERSION} from ${RELEASE_REF_NAME}"
+
       - name: Build unsigned MSI
         run: npm run tauri build -- --bundles msi
 
@@ -138,13 +192,24 @@ jobs:
       - name: Collect MSI and checksums
         shell: pwsh
         run: |
+          $version = $env:APP_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "APP_VERSION is not set" }
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "APP_VERSION is not major.minor.build: $version" }
+          $expected = "worker-dock_${version}_x64_en-US.msi"
+          $msiDir = "src-tauri/target/release/bundle/msi"
+          if (-not (Test-Path -LiteralPath $msiDir)) { throw "No MSI directory at $msiDir" }
+          $found = @(Get-ChildItem -LiteralPath $msiDir -Filter *.msi -File)
+          $match = @($found | Where-Object { $_.Name -eq $expected })
+          if ($match.Count -ne 1) {
+            $names = if ($found.Count -eq 0) { "(none)" } else { ($found | ForEach-Object Name) -join ", " }
+            throw "expected one $expected under ${msiDir}; found: $names"
+          }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $msis = Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File
-          if (-not $msis) { throw "No .msi produced under src-tauri/target/release/bundle/msi" }
-          Copy-Item $msis.FullName dist/
-          Get-FileHash -Algorithm SHA256 (Get-ChildItem dist/*.msi) |
-            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $_.Path.Split([char]0x5C)[-1] } |
-            Set-Content dist/SHA256SUMS-windows.txt
+          $dest = Join-Path dist $expected
+          Copy-Item -LiteralPath $match[0].FullName -Destination $dest
+          Get-FileHash -Algorithm SHA256 -LiteralPath $dest |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $expected } |
+            Set-Content -Encoding ascii dist/SHA256SUMS-windows.txt
           Get-Content dist/SHA256SUMS-windows.txt
 
       - name: Upload Windows artifacts
@@ -182,26 +247,36 @@ jobs:
           name: worker-dock-windows-msi
           path: dist
 
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
       - name: Write placeholder latest.json
         env:
-          TAG: ${{ github.ref_name }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          version="${TAG#v}"
-          python3 - "$version" "$DOWNLOAD_BASE_URL" <<'PY'
+          version="$(node scripts/set-app-version.mjs --release-tag | tr -d '\r')"
+          deb="worker-dock_${version}_amd64.deb"
+          msi="worker-dock_${version}_x64_en-US.msi"
+          test -f "dist/${deb}"
+          test -f "dist/${msi}"
+          python3 - "$version" "$DOWNLOAD_BASE_URL" "$deb" "$msi" <<'PY'
           import json, sys
-          version, base = sys.argv[1], sys.argv[2].rstrip("/")
+          version, base, deb, msi = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3], sys.argv[4]
           payload = {
               "version": version,
               "notes": "Unsigned tester build. Azure Trusted Signing, apt hosting, and winget publish are not enabled.",
               "platforms": {
                   "linux-x86_64": {
                       "signature": "",
-                      "url": f"{base}/releases/v{version}/worker-dock_{version}_amd64.deb",
+                      "url": f"{base}/releases/v{version}/{deb}",
                   },
                   "windows-x86_64": {
                       "signature": "",
-                      "url": f"{base}/releases/v{version}/worker-dock_{version}_x64_en-US.msi",
+                      "url": f"{base}/releases/v{version}/{msi}",
                   },
               },
           }

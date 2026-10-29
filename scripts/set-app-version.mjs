@@ -5,7 +5,8 @@
  * tauri.conf.json, and the winget tester manifests.
  *
  * Packaging CI calls this with 0.1.<github.run_number> so each .deb / MSI
- * upgrades the previous one. The committed baseline stays 0.1.0.
+ * upgrades the previous one. Release CI resolves a vMAJOR.MINOR.PATCH tag
+ * via --release-tag and stamps that version. The committed baseline stays 0.1.0.
  *
  * Windows WiX MajorUpgrade accepts only major.minor.build, each field <= 65535.
  */
@@ -41,6 +42,30 @@ export function parseMsiProductVersion(raw) {
     throw new Error(`each version field must be an integer <= ${MSI_FIELD_MAX}, got ${raw}`);
   }
   return { major: parts[0], minor: parts[1], build: parts[2], text: `${parts[0]}.${parts[1]}.${parts[2]}` };
+}
+
+export function versionFromReleaseRef(refName, ref) {
+  const name = refName == null ? "" : String(refName);
+  const full = ref == null ? "" : String(ref);
+  if (full !== `refs/tags/${name}`) {
+    throw new Error(
+      `release must run on a vMAJOR.MINOR.PATCH tag; got ref ${JSON.stringify(full)} name ${JSON.stringify(name)}. workflow_dispatch on a branch is not a release.`,
+    );
+  }
+  if (!/^v\d+\.\d+\.\d+$/.test(name)) {
+    throw new Error(`tag must match ^v\\d+\\.\\d+\\.\\d+$, got ${JSON.stringify(name)}`);
+  }
+  let version;
+  try {
+    version = parseMsiProductVersion(name.slice(1)).text;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`tag ${JSON.stringify(name)}: ${detail}`);
+  }
+  if (`v${version}` !== name) {
+    throw new Error(`tag ${JSON.stringify(name)} must equal the stamped version v${version}`);
+  }
+  return version;
 }
 
 function read(rel) {
@@ -181,6 +206,37 @@ function selfTest() {
   if (!stamped.includes("version = \"0.1.9\"") || !stamped.includes("\r\n")) {
     throw new Error("Cargo.lock stamp must keep CRLF and update the version");
   }
+  const releaseOk = versionFromReleaseRef("v0.1.26", "refs/tags/v0.1.26");
+  if (releaseOk !== "0.1.26") {
+    throw new Error(`v0.1.26 resolved to ${releaseOk}`);
+  }
+  const atLimit = versionFromReleaseRef("v65535.65535.65535", "refs/tags/v65535.65535.65535");
+  if (atLimit !== "65535.65535.65535") {
+    throw new Error(`MSI field limit rejected a legal tag: ${atLimit}`);
+  }
+  const releaseRejects = [
+    ["v1.2", "refs/tags/v1.2"],
+    ["v0.1.26-rc1", "refs/tags/v0.1.26-rc1"],
+    ["v70000.0.0", "refs/tags/v70000.0.0"],
+    ["v65536.0.0", "refs/tags/v65536.0.0"],
+    ["v01.2.3", "refs/tags/v01.2.3"],
+    ["main", "refs/heads/main"],
+    ["v0.1.26", "refs/heads/v0.1.26"],
+    ["v0.1.26", "refs/tags/v0.1.27"],
+  ];
+  for (const [refName, ref] of releaseRejects) {
+    let message = "";
+    try {
+      versionFromReleaseRef(refName, ref);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    if (!message.includes(refName)) {
+      throw new Error(
+        `expected a clear rejection for ${refName} (${ref}), got ${JSON.stringify(message)}`,
+      );
+    }
+  }
   const current = checkSync();
   console.log(`self-test ok; committed version ${current}`);
 }
@@ -189,7 +245,8 @@ function usage() {
   console.log(`Usage:
   node scripts/set-app-version.mjs <major.minor.build>
   node scripts/set-app-version.mjs --check-sync [expected]
-  node scripts/set-app-version.mjs --self-test`);
+  node scripts/set-app-version.mjs --self-test
+  RELEASE_REF_NAME=vX.Y.Z RELEASE_REF=refs/tags/vX.Y.Z node scripts/set-app-version.mjs --release-tag`);
 }
 
 const args = process.argv.slice(2);
@@ -199,6 +256,11 @@ try {
   } else if (args[0] === "--check-sync") {
     const current = checkSync(args[1]);
     console.log(`app version in sync: ${current}`);
+  } else if (args[0] === "--release-tag") {
+    if (args.length !== 1) {
+      throw new Error("--release-tag reads RELEASE_REF_NAME and RELEASE_REF from the environment");
+    }
+    console.log(versionFromReleaseRef(process.env.RELEASE_REF_NAME, process.env.RELEASE_REF));
   } else if (args[0] === "-h" || args[0] === "--help" || args.length === 0) {
     usage();
     if (args.length === 0) {

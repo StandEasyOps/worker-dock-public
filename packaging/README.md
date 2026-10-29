@@ -14,15 +14,17 @@ Triggers:
 
 - `CI` on every pull request: `cargo test` (Linux + Windows) and `npm run check` / `build` (Linux).
 - `Packaging` on pull requests, non-tag pushes, and `workflow_dispatch`: unsigned `.deb` on `ubuntu-22.04` and `ubuntu-24.04`, plus a WiX MSI on `windows-latest`. Uploads GitHub Actions artifacts only (`worker-dock-linux-deb-ubuntu-22.04`, `worker-dock-linux-deb-ubuntu-24.04`, `worker-dock-windows-msi`). Does **not** create a GitHub Release, sign, or publish.
-- `Release` on tag `vX.Y.Z` (and `workflow_dispatch`): tests, then unsigned bundles, then a **draft** GitHub Release (tags only).
+- `Release` on tag `vMAJOR.MINOR.PATCH`, and on `workflow_dispatch` of that tag ref: tests, then unsigned bundles, then a **draft** GitHub Release. `workflow_dispatch` on a branch fails the stamp step.
 
-Tag version must match `src-tauri/tauri.conf.json` / `package.json` (committed baseline `0.1.0` → `v0.1.0`).
+The release tag is stamped before `tauri build`. It must match `^v\d+\.\d+\.\d+$` with each field ≤ 65535, and the tag text must be `v` plus that version (`v0.1.26` is valid; `v01.2.3` is not). The committed baseline stays `0.1.0`. Tag `v0.1.26` publishes `worker-dock_0.1.26_amd64.deb` and `worker-dock_0.1.26_x64_en-US.msi`; `latest.json` uses those names.
 
 ## Versioning
 
 Packaging CI stamps **`0.1.<github.run_number>`** into `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the winget `PackageVersion` fields before `tauri build`. That is a valid Windows WiX `MajorUpgrade` product version (`major.minor.build`, each field ≤ 65535). The pinned `UpgradeCode` `{33446F2E-DAB1-5268-912F-3F5D1835AF9C}` does not change. A newer run therefore upgrades an older tester `.deb` / MSI.
 
-The committed files stay at `0.1.0`. Stamp locally with `npm run set-version -- 0.1.N`. Artifact names include the stamped version, for example `worker-dock_0.1.N_ubuntu-24.04_amd64.deb` and `worker-dock_0.1.N_x64_en-US.msi`. Settings → About and the tray tooltip show the same version.
+Release CI stamps the git tag instead of `github.run_number` (`v0.1.26` → `0.1.26`) and uploads `worker-dock_<version>_amd64.deb` and `worker-dock_<version>_x64_en-US.msi`.
+
+The committed files stay at `0.1.0`. Stamp locally with `npm run set-version -- 0.1.N`. Packaging artifact names include the stamped version, for example `worker-dock_0.1.N_ubuntu-24.04_amd64.deb` and `worker-dock_0.1.N_x64_en-US.msi`. Settings → About and the tray tooltip show the same version.
 
 ## Public URLs (placeholders)
 
