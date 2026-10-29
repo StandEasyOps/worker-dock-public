@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { asAuthMethod, type AuthProgress, type AuthStatus } from "./auth";
   import { type CliProgress, type CliStatus } from "./cli";
   import { previewStartCommand } from "./command";
@@ -20,6 +20,17 @@
   import { parsePreviewMode, previewBundle, type PreviewMode } from "./preview";
   import Settings from "./Settings.svelte";
   import { connectionLight, describeLight, isRunningHeadline } from "./status";
+  import {
+    beginSave,
+    copyDirs,
+    emptyBook,
+    enqueueSaves,
+    nameForFolderSave,
+    pollIsCurrent,
+    rememberSaved,
+    rollbackDirs,
+    type FolderBook,
+  } from "./folderSave";
   import { asHeadline, sameFolders, type WorkerDir, type WorkerSnapshot } from "./worker";
 
   type View = "home" | "settings";
@@ -46,6 +57,7 @@
   let copied = $state(false);
   let copiedDiagnostics = $state(false);
   let message = $state<string | null>(null);
+  let folderError = $state<string | null>(null);
   let restartOpen = $state(false);
   let resetOpen = $state(false);
   let listenAuth: UnlistenFn | undefined;
@@ -54,6 +66,10 @@
   let poll: ReturnType<typeof setInterval> | undefined;
   let lastAuthAt = 0;
   let lastTrayKey: string | null = null;
+  let book: FolderBook = emptyBook();
+  let savedDirViews: WorkerDir[] = [];
+  let baselineSet = false;
+  let saveTail: Promise<void> = Promise.resolve();
   const AUTH_INTERVAL_MS = 20_000;
   const WORKER_INTERVAL_MS = 2_000;
 
@@ -158,11 +174,15 @@
     if (!isTauri() || working) {
       return;
     }
+    const startedEpoch = book.epoch;
     try {
       if (Date.now() - lastAuthAt >= AUTH_INTERVAL_MS) {
         await refreshAuth(false);
       }
       const next = await invoke<WorkerSnapshot>("worker_get");
+      if (!pollIsCurrent(book, startedEpoch)) {
+        return;
+      }
       snapshot = next;
       if (drawer === "logs" && !paused) {
         logs = await invoke<LogsSnapshot>("logs_read");
@@ -182,14 +202,54 @@
     await syncTray();
   }
 
+  function remember(dirs: WorkerDir[]): void {
+    savedDirViews = copyDirs(dirs);
+    book = rememberSaved(book, savedDirViews.map((folder) => folder.path));
+  }
+
+  function savedFolderViews(): WorkerDir[] {
+    const byPath = new Map(savedDirViews.map((folder) => [folder.path, folder]));
+    return rollbackDirs(book).map(
+      (path) =>
+        byPath.get(path) ?? {
+          path,
+          exists: true,
+          isDirectory: true,
+          gitRemote: null,
+          hasRemote: undefined,
+        },
+    );
+  }
+
   function applySnapshot(next: WorkerSnapshot): void {
     snapshot = next;
     if (next.worker) {
       name = next.worker.name;
       folders = next.worker.workerDirs;
+      if (!baselineSet) {
+        remember(folders);
+      }
     } else if (!name) {
       name = next.suggestedName;
+      if (!baselineSet) {
+        remember([]);
+      }
+    } else if (!baselineSet) {
+      remember([]);
     }
+    baselineSet = true;
+  }
+
+  function enqueueSave<T>(task: () => Promise<T>): Promise<T> {
+    const queued = enqueueSaves(saveTail, task);
+    saveTail = queued.tail;
+    return queued.result;
+  }
+
+  function focusAfterRemove(index: number): void {
+    const buttons = document.querySelectorAll<HTMLButtonElement>("#repo-folders button[data-remove]");
+    const target = buttons[index] ?? buttons[index - 1] ?? document.getElementById("add-folder");
+    target?.focus();
   }
 
   function normalizeAuth(status: AuthStatus): AuthStatus {
@@ -236,40 +296,119 @@
       | "worker_restart_direct"
       | "worker_reset_identity",
     extra?: Record<string, unknown>,
-  ): Promise<void> {
+    keepDraftName = false,
+    quiet = false,
+  ): Promise<string | null> {
     if (preview) {
-      message = `Preview only — ${command} is mocked.`;
-      return;
+      const text = `Preview only — ${command} is mocked.`;
+      if (!quiet) {
+        message = text;
+      }
+      return text;
     }
     working = true;
-    message = null;
+    if (!quiet) {
+      message = null;
+    }
     try {
       const next = await invoke<WorkerSnapshot>(command, extra);
+      const draftName = name;
       applySnapshot(next);
+      if (keepDraftName) {
+        name = draftName;
+      }
       await syncTray();
+      return null;
     } catch (error) {
-      message = String(error);
+      const text = String(error);
+      if (!quiet) {
+        message = text;
+      }
+      return text;
     } finally {
       working = false;
     }
   }
 
-  async function save(thenRestart: boolean): Promise<void> {
+  async function save(
+    thenRestart: boolean,
+    persistName = name,
+    keepDraftName = false,
+  ): Promise<string | null> {
     const running = isRunningHeadline(asHeadline(worker?.runtime.headline ?? "not_ready"));
     const dirtyNow =
-      name.trim() !== (worker?.name ?? "") ||
+      persistName.trim() !== (worker?.name ?? "") ||
       !sameFolders(
         folders.map((folder) => folder.path),
         worker?.workerDirs.map((folder) => folder.path) ?? [],
       );
     if (preview) {
-      message = "Preview only — save is mocked.";
-      return;
+      return "Preview only — save is mocked.";
     }
-    await runWorker("worker_save", { request: { name, workerDirs: folders.map((f) => f.path) } });
+    book = beginSave(book);
+    const error = await runWorker(
+      "worker_save",
+      { request: { name: persistName, workerDirs: folders.map((f) => f.path) } },
+      keepDraftName,
+      true,
+    );
+    if (error) {
+      return error;
+    }
+    remember(folders);
+    folderError = null;
     if (thenRestart || (running && dirtyNow)) {
       restartOpen = true;
     }
+    return null;
+  }
+
+  async function writeFolders(next: WorkerDir[], removedIndex?: number): Promise<void> {
+    if (working) {
+      return;
+    }
+    const persistName = nameForFolderSave(
+      worker ? worker.name : null,
+      name,
+      snapshot?.suggestedName ?? "",
+    );
+    folders = next;
+    const error = await save(false, persistName, true);
+    if (error) {
+      folders = savedFolderViews();
+      folderError = error;
+      await tick();
+      document.getElementById("folder-error")?.focus();
+      return;
+    }
+    if (removedIndex !== undefined) {
+      await tick();
+      focusAfterRemove(removedIndex);
+    }
+  }
+
+  async function appendFolder(picked: string): Promise<void> {
+    if (working || folders.some((folder) => folder.path === picked)) {
+      return;
+    }
+    await writeFolders([
+      ...folders,
+      { path: picked, exists: true, isDirectory: true, gitRemote: null, hasRemote: undefined },
+    ]);
+  }
+
+  async function removeFolder(path: string): Promise<void> {
+    if (working) {
+      return;
+    }
+    const index = folders.findIndex((folder) => folder.path === path);
+    if (index < 0) {
+      return;
+    }
+    await writeFolders(
+      folders.filter((folder) => folder.path !== path),
+      index,
+    );
   }
 
   async function browse(): Promise<void> {
@@ -282,10 +421,11 @@
       if (!picked || folders.some((folder) => folder.path === picked)) {
         return;
       }
-      folders = [
-        ...folders,
-        { path: picked, exists: true, isDirectory: true, gitRemote: null, hasRemote: undefined },
-      ];
+      if (working) {
+        await enqueueSave(() => appendFolder(picked));
+        return;
+      }
+      await enqueueSave(() => appendFolder(picked));
     } catch (error) {
       message = String(error);
     }
@@ -449,14 +589,27 @@
           {folders}
           {working}
           {message}
+          {folderError}
           {mocked}
           focusName={preview === "name"}
           onName={(value) => (name = value)}
           onApiKey={(value) => (apiKey = value)}
-          onSave={() => void save(false)}
+          onSave={() => {
+            void enqueueSave(async () => {
+              message = await save(false);
+            });
+          }}
           onBrowse={() => void browse()}
           onRemove={(index) => {
-            folders = folders.filter((_, current) => current !== index);
+            const path = folders[index]?.path;
+            if (!path) {
+              return;
+            }
+            if (preview || !isTauri()) {
+              folders = folders.filter((folder) => folder.path !== path);
+              return;
+            }
+            void enqueueSave(() => removeFolder(path));
           }}
           onInstall={() => void runWorker("worker_install")}
           onUninstall={() => void runWorker("worker_uninstall")}

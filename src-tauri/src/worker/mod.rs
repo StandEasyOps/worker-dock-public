@@ -88,10 +88,11 @@ pub async fn worker_save(
 }
 
 #[tauri::command]
-pub async fn worker_pick_dir() -> Result<Option<String>, WorkerError> {
-    tokio::task::spawn_blocking(|| {
+pub async fn worker_pick_dir(window: tauri::WebviewWindow) -> Result<Option<String>, WorkerError> {
+    tokio::task::spawn_blocking(move || {
         rfd::FileDialog::new()
             .set_title("Add a worker folder")
+            .set_parent(&window)
             .pick_folder()
             .map(|path| path.to_string_lossy().to_string())
     })
