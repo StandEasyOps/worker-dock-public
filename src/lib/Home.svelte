@@ -8,7 +8,6 @@
     describeBackend,
     describeLiveState,
     folderHint,
-    sameFolders,
     type WorkerDir,
     type WorkerSnapshot,
   } from "./worker";
@@ -24,6 +23,7 @@
     folders: WorkerDir[];
     working: boolean;
     message: string | null;
+    folderError: string | null;
     mocked: boolean;
     focusName: boolean;
     onName: (value: string) => void;
@@ -64,6 +64,7 @@
     folders,
     working,
     message,
+    folderError,
     mocked,
     focusName,
     onName,
@@ -101,8 +102,7 @@
   const runMode = $derived(runtime?.runMode ?? "none");
   const running = $derived(isRunningHeadline(headline) || runMode === "service" || runMode === "direct");
   const savedName = $derived(worker?.name ?? "");
-  const savedFolders = $derived(worker?.workerDirs.map((folder) => folder.path) ?? []);
-  const dirty = $derived(name.trim() !== savedName || !sameFolders(folders.map((f) => f.path), savedFolders));
+  const dirty = $derived(name.trim() !== savedName);
   const live = $derived(
     previewStartCommand({
       agentPath: worker?.agentPath ?? "agent",
@@ -251,15 +251,18 @@
         <h2 id="folders-heading">Repo folders</h2>
         <p>Each local folder is a <code>--worker-dir</code>. First folder is assignment identity.</p>
       </div>
-      <button type="button" class="secondary" disabled={working} onclick={onBrowse}>Add folder</button>
+      <button id="add-folder" type="button" class="secondary" disabled={working} onclick={onBrowse}>Add folder</button>
     </div>
+    {#if folderError}
+      <p id="folder-error" class="banner" role="alert" tabindex="-1">{folderError}</p>
+    {/if}
     {#if folders.length === 0}
-      <div class="empty" data-state="folders-empty">
+      <div class="empty" data-state="folders-empty" aria-describedby={folderError ? "folder-error" : undefined}>
         <p>No folders yet.</p>
         <p class="hint">Add a local checkout. The native folder picker is used — not a typed path.</p>
       </div>
     {:else}
-      <ul class="folders">
+      <ul id="repo-folders" class="folders" aria-describedby={folderError ? "folder-error" : undefined}>
         {#each folders as folder, index (folder.path)}
           <li>
             <div>
@@ -274,7 +277,7 @@
                 {/if}
               </span>
             </div>
-            <button type="button" class="ghost" onclick={() => onRemove(index)}>Remove</button>
+            <button type="button" class="ghost" data-remove disabled={working} onclick={() => onRemove(index)}>Remove</button>
           </li>
         {/each}
       </ul>
