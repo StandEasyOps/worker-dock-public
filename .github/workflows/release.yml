@@ -195,7 +195,7 @@ jobs:
           if-no-files-found: error
 
   draft-release:
-    name: Draft GitHub Release
+    name: Publish GitHub Release
     needs: [linux-deb, windows-msi]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
@@ -261,23 +261,35 @@ jobs:
           PY
           ls -l dist
           cat dist/latest.json
+          repo="${GITHUB_REPOSITORY:?}"
+          tag="v${version}"
+          python3 - "$repo" "$tag" "$deb" "$msi" <<'PY'
+          import sys
+          repo, tag, deb, msi = sys.argv[1:]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          notes = f"""## Install
 
-      - name: Create draft GitHub Release
+          - [Ubuntu 64-bit .deb]({base}/{deb})
+          - [Windows 64-bit MSI]({base}/{msi})
+
+          Unsigned build. It does not include the official agent CLI. Ubuntu package is the 22.04 glibc baseline. Windows MSI includes the WebView2 bootstrapper.
+
+          These files are not signed. SmartScreen and OS trust warnings are expected. winget id StandEasyOps.WorkerDock is reserved in docs only.
+          """
+          text = "\n".join(line[10:] if line.startswith("          ") else line for line in notes.splitlines())
+          with open("release-notes.md", "w", encoding="utf-8") as handle:
+              handle.write(text.strip() + "\n")
+          PY
+          cat release-notes.md
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          draft: true
-          prerelease: true
-          name: worker-dock ${{ github.ref_name }} (unsigned)
-          body: |
-            Unsigned tester build of worker-dock.
-
-            - Linux: `.deb` (Ubuntu 22.04 glibc baseline). Does **not** include the official `agent` CLI.
-            - Windows: WiX MSI with embedded WebView2 bootstrapper. Built on `windows-latest`.
-            - Download URLs in `latest.json` use the placeholder host `https://get.standeasyops.com` (not provisioned).
-            - winget id **StandEasyOps.WorkerDock** is reserved in docs only — this release is not submitted to winget-pkgs.
-            - Azure Trusted Signing and apt GPG signing are hooks only. Do not treat these files as trusted.
-
-            Sideload for testers. SmartScreen and OS trust warnings are expected.
+          draft: false
+          prerelease: false
+          make_latest: true
+          name: worker-dock ${{ github.ref_name }}
+          body_path: release-notes.md
           files: dist/*
           fail_on_unmatched_files: true
         env:

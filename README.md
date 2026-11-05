@@ -4,6 +4,19 @@ worker-dock is provided as-is under the MIT licence; we don't accept issues or p
 
 **worker-dock** is a desktop app by Stand Easy Ops for Windows and Ubuntu (macOS later). It installs, runs, and manages personal self-hosted workers for the official `agent` CLI (`agent login`, `agent worker start`, `agent worker debug`).
 
+## Install
+
+Release **0.2.2** upgrades an existing 0.2.1 install. Installers are on the [releases page](https://github.com/StandEasyOps/worker-dock-public/releases).
+
+- [Ubuntu 64-bit .deb](https://github.com/StandEasyOps/worker-dock-public/releases/download/v0.2.2/worker-dock_0.2.2_amd64.deb)
+- [Windows 64-bit MSI](https://github.com/StandEasyOps/worker-dock-public/releases/download/v0.2.2/worker-dock_0.2.2_x64_en-US.msi)
+
+The `.deb` does not include the official Cursor CLI. On Ubuntu:
+
+```bash
+sudo apt install ./worker-dock_0.2.2_amd64.deb
+```
+
 The app supervises the official CLI. It does not replace the worker protocol, and it does not use “Cursor” in the product name. The window, tray, and installers say **worker-dock**. App icons and the header mark are the Stand Easy Ops tile and A1 mark. **standeasyops.com** sits next to Cursor Docs. Wording such as “works with the official Cursor CLI” is fine.
 
 This repository has the Tauri 2 + Svelte app, official `agent` CLI lifecycle, sign-in, one named personal worker, per-user start/stop, Logs, Preflight, and GitHub Actions that build **unsigned** Ubuntu `.deb` and Windows MSI tester artifacts. Signing, apt hosting, and winget publish are not in this slice.
@@ -45,7 +58,7 @@ npm run tauri dev
 
 The window is Home plus Settings. Home leads with worker name (`--name`) and repo folders, then Run without service and Service setup. Next to the name: **Open in Agents** (`https://cursor.com/agents`) and **Local status** (`http://127.0.0.1:<port>/readyz`; no local dashboard). Live status is localhost `/readyz` plus documented `/metrics` gauges (live / idle / agent running). A watchdog restarts a user-started worker if it exits or stops responding; **Copy diagnostics** exports redacted logs; **Reset worker identity** wipes only the isolated `--data-dir` and starts again with the same flags. The top bar shows **worker-dock**, the Stand Easy Ops mark, a Ready / Not ready lamp, **Cursor Docs**, and **standeasyops.com**. Auto-start is its own toggle — it does not change Ready to amber. Logs and Checks sit in a drawer. Closing the window leaves an installed service running; quitting the app stops a child worker. A second launch focuses the existing window (single-instance). On Ubuntu, tray left-click opens the menu only; Open unminimizes the window and does not hide it again. `apt upgrade` may stop the invoking user's leftover UI so the old tray icon does not stay next to the new one; it does not stop other users' windows or `worker-dock-run`. If the installer cannot tell which user invoked it, running windows are left alone until the next launch. If two icons remain, use **Quit UI** on the stale one. The CLI package is about 500 MB. Team Pools and service-account keys are out of scope.
 
-CI on pull requests runs `cargo test` (Ubuntu 22.04 + Windows) and `npm run check` / `build`. Packaging CI stamps `0.1.<run_number>` so each unsigned `.deb` / MSI upgrades the last install. Tag `vX.Y.Z` (must match the committed app version) builds an unsigned `.deb` and MSI and attaches them to a draft GitHub Release. Public URLs use the placeholder host `https://get.standeasyops.com` (not provisioned). winget id `StandEasyOps.WorkerDock` is reserved in docs only. Azure Trusted Signing is a commented hook — artifacts are unsigned.
+CI on pull requests runs `cargo test` (Ubuntu 22.04 + Windows) and `npm run check` / `build`. Packaging CI stamps `0.1.<run_number>` for tester artifacts only. Those builds stay below release tags, so they do not replace an installed `0.2.x`. Tag `vX.Y.Z` from `v0.2.0` upward builds an unsigned `.deb` and MSI and publishes them on the GitHub Releases page. Public URLs use the placeholder host `https://get.standeasyops.com` (not provisioned). winget id `StandEasyOps.WorkerDock` is reserved in docs only. Azure Trusted Signing is a commented hook — artifacts are unsigned.
 
 Frontend and Rust checks:
 

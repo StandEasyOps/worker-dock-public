@@ -14,7 +14,7 @@ Triggers:
 
 - `CI` on every pull request: `cargo test` (Linux + Windows) and `npm run check` / `build` (Linux).
 - `Packaging` on pull requests, non-tag pushes, and `workflow_dispatch`: unsigned `.deb` on `ubuntu-22.04` and `ubuntu-24.04`, plus a WiX MSI on `windows-latest`. Uploads GitHub Actions artifacts only (`worker-dock-linux-deb-ubuntu-22.04`, `worker-dock-linux-deb-ubuntu-24.04`, `worker-dock-windows-msi`). Does **not** create a GitHub Release, sign, or publish.
-- `Release` on tag `v[0-9]+.[0-9]+.[0-9]+` (at least `v0.2.0`), and on `workflow_dispatch` of that tag ref: tests, then unsigned bundles, then a **draft** GitHub Release. `workflow_dispatch` on a branch fails the stamp step.
+- `Release` on tag `v[0-9]+.[0-9]+.[0-9]+` (at least `v0.2.0`), and on `workflow_dispatch` of that tag ref: tests, then unsigned bundles, then a published GitHub Release (not a draft, not a prerelease) so it shows on the repository home page. `workflow_dispatch` on a branch fails the stamp step.
 
 The release tag is stamped before `tauri build`. It must be `vMAJOR.MINOR.PATCH` with major and minor ≤ 255, patch ≤ 65535, and the tag text must be `v` plus that version (`v0.2.0` is valid; `v0.1.26`, `v01.2.3`, and `v256.0.0` are not). The committed baseline stays `0.1.0`. Tag `v0.2.0` publishes `worker-dock_0.2.0_amd64.deb` and `worker-dock_0.2.0_x64_en-US.msi`; `latest.json` uses those names.
 
