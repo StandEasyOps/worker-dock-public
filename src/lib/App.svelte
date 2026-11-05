@@ -673,16 +673,6 @@
                 cliBusy = false;
               });
           }}
-          onUpdateCli={() => {
-            cliBusy = true;
-            void invoke<CliStatus>("cli_update")
-              .then((status) => {
-                cli = status;
-              })
-              .finally(() => {
-                cliBusy = false;
-              });
-          }}
           onOpenConfig={() => {
             void invoke("worker_open_config_folder");
           }}

@@ -119,18 +119,25 @@ pub fn kill_process_tree(pid: u32) {
         let mut command = std::process::Command::new("taskkill");
         command.args(["/F", "/T", "/PID", &pid.to_string()]);
         hide_std_window(&mut command);
-        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let _ = command.status();
     }
     #[cfg(unix)]
     {
         let mut term = std::process::Command::new("kill");
         term.args(["-TERM", "--", &pid.to_string()]);
-        term.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        term.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let _ = term.status();
         let mut kids = std::process::Command::new("pkill");
         kids.args(["-TERM", "-P", &pid.to_string()]);
-        kids.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        kids.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let _ = kids.status();
     }
 }

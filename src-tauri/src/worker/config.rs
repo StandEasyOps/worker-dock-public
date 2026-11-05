@@ -3,9 +3,7 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, value};
 use crate::cli::paths::config_path;
 use crate::worker::error::WorkerError;
 use crate::worker::paths::worker_data_dir;
-use crate::worker::validate::{
-    dir_status, suggested_name, validate_name, validate_worker_dirs,
-};
+use crate::worker::validate::{dir_status, suggested_name, validate_name, validate_worker_dirs};
 
 pub const DEFAULT_MANAGEMENT_PORT: u16 = 18741;
 pub const DEFAULT_IDLE_RELEASE_TIMEOUT: u32 = 0;
@@ -146,11 +144,17 @@ pub fn apply_primary_worker(
     if document.get("schema_version").is_none() {
         document["schema_version"] = value(1);
     }
-    if document.get("workers").and_then(Item::as_array_of_tables).is_none() {
+    if document
+        .get("workers")
+        .and_then(Item::as_array_of_tables)
+        .is_none()
+    {
         document["workers"] = Item::ArrayOfTables(ArrayOfTables::new());
     }
     let Some(array) = document["workers"].as_array_of_tables_mut() else {
-        return Err(WorkerError::msg("config.toml workers is not an array of tables"));
+        return Err(WorkerError::msg(
+            "config.toml workers is not an array of tables",
+        ));
     };
     for (index, table) in array.iter().enumerate().skip(1) {
         let other = parse_worker_table(table);
@@ -174,12 +178,17 @@ pub fn apply_primary_worker(
     record.name = name;
     record.worker_dirs = dirs;
     if creating {
-        record = WorkerRecord::defaults(record.id.clone(), record.name.clone(), record.worker_dirs.clone());
+        record = WorkerRecord::defaults(
+            record.id.clone(),
+            record.name.clone(),
+            record.worker_dirs.clone(),
+        );
         write_full_defaults(table, &record);
     } else {
         table["id"] = value(record.id.as_str());
         table["name"] = value(record.name.as_str());
-        table["worker_dirs"] = Item::Value(toml_edit::Value::Array(dirs_array(&record.worker_dirs)));
+        table["worker_dirs"] =
+            Item::Value(toml_edit::Value::Array(dirs_array(&record.worker_dirs)));
     }
     let _ = worker_data_dir(&record.id)?;
     Ok(record)
@@ -264,7 +273,12 @@ mod tests {
 
     fn sample_dir() -> (tempfile::TempDir, String) {
         let dir = tempdir().unwrap();
-        let path = dir.path().canonicalize().unwrap().to_string_lossy().to_string();
+        let path = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         (dir, path)
     }
 

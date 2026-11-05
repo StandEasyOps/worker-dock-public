@@ -1,6 +1,5 @@
 use serde::Serialize;
 
-use crate::cli::detect::DISABLE_AUTO_UPDATE;
 use crate::worker::config::WorkerRecord;
 use crate::worker::error::WorkerError;
 use crate::worker::validate::validate_display;
@@ -46,7 +45,7 @@ pub fn personal_start_command(
     } else {
         agent_path.trim()
     };
-    let mut argv = vec![DISABLE_AUTO_UPDATE.to_string(), "worker".to_string()];
+    let mut argv = vec!["worker".to_string()];
     argv.push("--name".to_string());
     argv.push(record.name.clone());
     for dir in &record.worker_dirs {
@@ -145,7 +144,6 @@ mod tests {
         assert_eq!(
             command.start_argv,
             vec![
-                "--disable-auto-update",
                 "worker",
                 "--name",
                 "my-devbox",
@@ -174,8 +172,14 @@ mod tests {
             .position(|part| part == "start")
             .unwrap();
         assert!(name_at < start_at);
-        assert_eq!(command.start_argv[1], "worker");
-        assert_ne!(command.start_argv.get(2), Some(&"start".to_string()));
+        assert_eq!(command.start_argv[0], "worker");
+        assert_ne!(command.start_argv.get(1), Some(&"start".to_string()));
+        assert!(
+            !command
+                .start_argv
+                .iter()
+                .any(|part| part == "--disable-auto-update")
+        );
         assert!(!command.start_argv.iter().any(|part| part.contains("pool")));
         assert!(
             !command
@@ -207,7 +211,7 @@ mod tests {
         let command =
             personal_start_command("agent", &record("my devbox", &["/tmp/repo"]), "/tmp/data")
                 .unwrap();
-        assert_eq!(command.start_argv[3], "my devbox");
+        assert_eq!(command.start_argv[2], "my devbox");
         assert!(command.command_line.contains("--name 'my devbox'"));
         assert!(!command.start_argv.iter().any(|part| part.contains('\'')));
     }

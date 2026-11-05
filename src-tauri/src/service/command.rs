@@ -81,9 +81,9 @@ mod tests {
         let record = record();
         let plan = build_launch_plan(&record, Path::new("/tmp/agent")).unwrap();
         let joined = plan.args.join(" ");
-        assert_eq!(plan.args[0], crate::cli::detect::DISABLE_AUTO_UPDATE);
-        assert_eq!(plan.args[1], "worker");
-        assert_ne!(plan.args.get(2).map(String::as_str), Some("start"));
+        assert_eq!(plan.args[0], "worker");
+        assert_ne!(plan.args.get(1).map(String::as_str), Some("start"));
+        assert!(!joined.contains("--disable-auto-update"));
         assert!(joined.contains("--name dev-laptop"));
         assert!(joined.contains("--idle-release-timeout 0"));
         assert!(joined.contains("--management-addr 127.0.0.1:18741"));

@@ -12,7 +12,6 @@
     working: boolean;
     mocked: boolean;
     onInstallCli: () => void;
-    onUpdateCli: () => void;
     onOpenConfig: () => void;
   };
 
@@ -24,7 +23,6 @@
     working,
     mocked,
     onInstallCli,
-    onUpdateCli,
     onOpenConfig,
   }: Props = $props();
 
@@ -68,7 +66,10 @@
 
   <section class="card">
     <h2>Official agent CLI</h2>
-    <p>Install the pinned official archive. Auto-update stays off. Works with the official Cursor CLI.</p>
+    <p>
+      Installs a known official archive the first time. After that, Cursor updates the CLI.
+      worker-dock launches the agent shim and does not pin the versioned binary.
+    </p>
     {#if cliBusy}
       <p class="hint">{cliProgress ? describePhase(cliProgress.phase) : "Working"}… {cliProgress?.detail ?? ""}</p>
     {:else if cli}
@@ -78,23 +79,15 @@
           <dd>{cli.present ? cli.installedVersion ?? "yes" : "Not installed"}</dd>
         </div>
         <div>
-          <dt>Pinned</dt>
-          <dd>{cli.pinnedVersion}</dd>
-        </div>
-        <div>
           <dt>Path</dt>
           <dd><code>{cli.path ?? "—"}</code></dd>
         </div>
       </dl>
-      <div class="actions">
-        {#if !cli.present}
+      {#if !cli.present}
+        <div class="actions">
           <button type="button" class="primary" disabled={working} onclick={onInstallCli}>Install official CLI</button>
-        {:else if cli.updateAvailable}
-          <button type="button" class="primary" disabled={working} onclick={onUpdateCli}>Install vetted update</button>
-        {/if}
-      </div>
-      {#if cli.officialNewerUnvetted}
-        <p class="hint">Official latest is newer and not vetted. worker-dock will not install it.</p>
+        </div>
+        <p class="hint">First install uses archive {cli.pinnedVersion}. Cursor updates it after that.</p>
       {/if}
     {:else}
       <p class="hint">CLI status is unavailable{mocked ? " in this preview" : ""}.</p>

@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::process::Command;
 
-use crate::cli::detect::{DISABLE_AUTO_UPDATE, detect};
+use crate::cli::detect::detect;
 use crate::cli::error::redact_secret;
 use crate::process::{hide_tokio_window, prefer_hidden_agent, wait_tracked_output};
 use crate::worker::config::{WorkerRecord, load_records};
@@ -30,19 +30,12 @@ pub struct DebugView {
     pub json: Option<String>,
 }
 
-pub fn debug_args(
-    record: &WorkerRecord,
-    auto_update_flag_supported: bool,
-) -> Result<Vec<String>, String> {
+pub fn debug_args(record: &WorkerRecord) -> Result<Vec<String>, String> {
     if record.name.trim().is_empty() {
         return Err("Save a display name before running worker debug.".into());
     }
     let dirs = validate_worker_dirs(&record.worker_dirs).map_err(|error| error.to_string())?;
-    let mut args = Vec::new();
-    if auto_update_flag_supported {
-        args.push(DISABLE_AUTO_UPDATE.to_string());
-    }
-    args.push("worker".to_string());
+    let mut args = vec!["worker".to_string()];
     args.push("--name".to_string());
     args.push(record.name.clone());
     for dir in dirs {
@@ -77,7 +70,7 @@ pub async fn run_debug() -> DebugView {
         Ok(record) => record,
         Err(error) => return skipped(error),
     };
-    let args = match debug_args(&record, detected.auto_update_flag_supported) {
+    let args = match debug_args(&record) {
         Ok(args) => args,
         Err(error) => return skipped(error),
     };
@@ -314,10 +307,10 @@ mod tests {
 
     #[test]
     fn debug_argv_matches_design() {
-        let args = debug_args(&record(), true).unwrap();
+        let args = debug_args(&record()).unwrap();
         let joined = args.join(" ");
-        assert_eq!(args[0], DISABLE_AUTO_UPDATE);
-        assert_eq!(args[1], "worker");
+        assert_eq!(args[0], "worker");
+        assert!(!joined.contains("--disable-auto-update"));
         assert!(joined.contains("--name dev-laptop"));
         assert!(joined.contains("--worker-dir"));
         assert!(joined.ends_with("debug --json"));

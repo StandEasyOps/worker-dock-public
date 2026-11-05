@@ -128,7 +128,7 @@ Use **Tauri 2 with a Rust core and a small Svelte UI**.
 - Bundle targets: WiX MSI (`embedBootstrapper`) and Debian `.deb`.
 - UI: Svelte 5 + SvelteKit (static SPA) + TypeScript + Vite, from the official `create-tauri-app` `svelte-ts` template. Do not grow a large client-side framework surface; screens stay thin views over Rust.
 - Systems: `keyring` (Credential Manager / libsecret), systemd user units, Windows Task Scheduler, `reqwest` TLS preflight.
-- Updates: CLI updates are pinned official archives plus a vetted UI action; `--disable-auto-update` on every `agent` spawn. Do not pipe the live install script. The Tauri updater plugin (signed GitHub Releases) waits until Azure Trusted Signing exists; this slice ships unsigned tester `.deb` / MSI only.
+- Updates: the first CLI install is a hashed official archive. After that, Cursor updates the CLI. worker-dock execs the agent shim and does not pass `--disable-auto-update`. Do not pipe the live install script. The Tauri updater plugin (signed GitHub Releases) waits until Azure Trusted Signing exists; this slice ships unsigned tester `.deb` / MSI only.
 - Revisit only if Ubuntu WebKitGTK or tray integration fails acceptance testing.
 
 The design PR has been accepted. Implementation follows this document and [DESIGN.md](DESIGN.md).

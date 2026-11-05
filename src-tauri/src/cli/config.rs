@@ -12,6 +12,7 @@ pub struct CliConfig {
     pub path: String,
     pub install_method: String,
     pub pinned_version: String,
+    /// Kept so older config files still parse. Spawns ignore it. Cursor updates the CLI.
     pub disable_auto_update: bool,
 }
 
@@ -21,7 +22,7 @@ impl Default for CliConfig {
             path: String::new(),
             install_method: "official_archive".to_string(),
             pinned_version: PINNED_VERSION.to_string(),
-            disable_auto_update: true,
+            disable_auto_update: false,
         }
     }
 }
@@ -41,9 +42,9 @@ pub fn save_cli_fields(cli: &CliConfig) -> Result<(), CliError> {
         crate::privacy::ensure_private_dir(parent)?;
     }
     let mut document = if path.is_file() {
-        fs::read_to_string(&path)?.parse::<DocumentMut>().map_err(|error| {
-            CliError::msg(format!("invalid config.toml: {error}"))
-        })?
+        fs::read_to_string(&path)?
+            .parse::<DocumentMut>()
+            .map_err(|error| CliError::msg(format!("invalid config.toml: {error}")))?
     } else {
         DocumentMut::new()
     };
@@ -104,10 +105,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_pins_and_disables_auto_update() {
+    fn default_pins_archive_and_leaves_cli_updates_to_cursor() {
         let config = CliConfig::default();
         assert_eq!(config.pinned_version, PINNED_VERSION);
-        assert!(config.disable_auto_update);
+        assert!(!config.disable_auto_update);
         assert_eq!(config.install_method, "official_archive");
     }
 

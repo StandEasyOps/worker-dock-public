@@ -7,8 +7,6 @@ export type CliStatus = {
   onPinned: boolean;
   updateAvailable: boolean;
   officialNewerUnvetted: boolean;
-  autoUpdateDisabled: boolean;
-  autoUpdateFlagSupported: boolean;
   archiveUrl: string;
   installScriptUrl: string;
 };

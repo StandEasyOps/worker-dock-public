@@ -119,10 +119,10 @@ fn parse_gauge_line(line: &str) -> Option<(&str, f64)> {
         return None;
     }
     let token = rest.split_whitespace().next()?;
-    if !token.bytes().all(|b| {
-        b.is_ascii_digit()
-            || matches!(b, b'.' | b'-' | b'+' | b'e' | b'E')
-    }) {
+    if !token
+        .bytes()
+        .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'+' | b'e' | b'E'))
+    {
         return None;
     }
     let value: f64 = token.parse().ok()?;
@@ -209,10 +209,7 @@ cursor_self_hosted_worker_connect_success_total 4\n";
             live_state_from(false, "stopped", None, None, false),
             "offline"
         );
-        assert_eq!(
-            live_state_from(false, "error", None, None, false),
-            "error"
-        );
+        assert_eq!(live_state_from(false, "error", None, None, false), "error");
         assert_eq!(
             live_state_from(true, "starting", None, None, false),
             "starting"
@@ -225,10 +222,7 @@ cursor_self_hosted_worker_connect_success_total 4\n";
             live_state_from(true, "connected", Some(true), Some(true), true),
             "busy"
         );
-        assert_eq!(
-            live_state_from(true, "connected", None, None, true),
-            "live"
-        );
+        assert_eq!(live_state_from(true, "connected", None, None, true), "live");
         assert_eq!(
             live_state_from(true, "connected", Some(false), Some(false), false),
             "unresponsive"

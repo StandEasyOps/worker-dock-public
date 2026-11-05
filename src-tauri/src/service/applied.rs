@@ -65,7 +65,11 @@ pub fn name_and_dirs_from_argv(args: &[String]) -> (String, Vec<String>) {
     (name, worker_dirs)
 }
 
-pub fn restart_required(record: &WorkerRecord, state: &str, applied: Option<&AppliedLaunch>) -> bool {
+pub fn restart_required(
+    record: &WorkerRecord,
+    state: &str,
+    applied: Option<&AppliedLaunch>,
+) -> bool {
     if !matches!(state, "running" | "starting") {
         return false;
     }
@@ -87,7 +91,6 @@ mod tests {
     #[test]
     fn reads_name_and_repeated_dirs_before_start() {
         let args = vec![
-            "--disable-auto-update".into(),
             "worker".into(),
             "--name".into(),
             "dev-laptop".into(),

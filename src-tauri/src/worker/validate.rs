@@ -9,14 +9,19 @@ pub const MAX_NAME_LEN: usize = 64;
 pub fn validate_name(name: &str) -> Result<String, WorkerError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(WorkerError::msg("Enter a display name for this personal worker."));
+        return Err(WorkerError::msg(
+            "Enter a display name for this personal worker.",
+        ));
     }
     if name.chars().count() > MAX_NAME_LEN {
         return Err(WorkerError::msg(format!(
             "The worker name must be {MAX_NAME_LEN} characters or fewer."
         )));
     }
-    if name.chars().any(|c| c.is_control() || matches!(c, '/' | '\\' | '\0')) {
+    if name
+        .chars()
+        .any(|c| c.is_control() || matches!(c, '/' | '\\' | '\0'))
+    {
         return Err(WorkerError::msg(
             "The worker name cannot contain slashes or control characters.",
         ));
@@ -44,7 +49,10 @@ pub fn validate_display(display: &str) -> Result<String, WorkerError> {
     if display.chars().any(|c| {
         c.is_control()
             || c.is_whitespace()
-            || matches!(c, ';' | '|' | '&' | '$' | '`' | '\'' | '"' | '\\' | '/' | '\0')
+            || matches!(
+                c,
+                ';' | '|' | '&' | '$' | '`' | '\'' | '"' | '\\' | '/' | '\0'
+            )
     }) {
         return Err(WorkerError::msg(
             "The display name can only be a screen identifier such as :0.",
@@ -123,16 +131,17 @@ fn validate_one_dir(raw: &str) -> Result<PathBuf, WorkerError> {
             "Worker folders must be absolute paths: {trimmed}"
         )));
     }
-    let meta = fs::metadata(path).map_err(|_| {
-        WorkerError::msg(format!("Worker folder does not exist: {trimmed}"))
-    })?;
+    let meta = fs::metadata(path)
+        .map_err(|_| WorkerError::msg(format!("Worker folder does not exist: {trimmed}")))?;
     if !meta.is_dir() {
         return Err(WorkerError::msg(format!(
             "Worker folder is not a directory: {trimmed}"
         )));
     }
     path.canonicalize().map_err(|error| {
-        WorkerError::msg(format!("Could not resolve worker folder {trimmed}: {error}"))
+        WorkerError::msg(format!(
+            "Could not resolve worker folder {trimmed}: {error}"
+        ))
     })
 }
 

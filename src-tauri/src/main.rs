@@ -8,7 +8,10 @@ fn main() {
     if first.as_deref() == Some("--supervised-run") {
         let id = args.next().unwrap_or_default();
         if let Err(error) = worker_dock_lib::run_supervised_worker(&id) {
-            eprintln!("{}", worker_dock_lib::redact_for_console(&error.to_string()));
+            eprintln!(
+                "{}",
+                worker_dock_lib::redact_for_console(&error.to_string())
+            );
             std::process::exit(1);
         }
         return;
@@ -16,7 +19,10 @@ fn main() {
     if is_wrapper_name(&exe) {
         let id = first.unwrap_or_default();
         if let Err(error) = worker_dock_lib::run_supervised_worker(&id) {
-            eprintln!("{}", worker_dock_lib::redact_for_console(&error.to_string()));
+            eprintln!(
+                "{}",
+                worker_dock_lib::redact_for_console(&error.to_string())
+            );
             std::process::exit(1);
         }
         return;

@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::cli::config::{CliConfig, configured_binary};
 use crate::cli::error::CliError;
-use crate::cli::paths::{default_search_paths, is_usable_file, look_on_path};
+use crate::cli::paths::{default_search_paths, is_usable_file, launch_agent_path, look_on_path};
 use crate::process::{hide_tokio_window, prefer_hidden_agent, wait_tracked_output};
 
 /// `--version` is probed once and reused until the binary disappears or
@@ -17,13 +17,10 @@ use crate::process::{hide_tokio_window, prefer_hidden_agent, wait_tracked_output
 static DETECTED: Mutex<Option<DetectedCli>> = Mutex::new(None);
 static DETECT_FLIGHT: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
-pub(crate) const DISABLE_AUTO_UPDATE: &str = "--disable-auto-update";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetectedCli {
     pub path: PathBuf,
     pub version: String,
-    pub auto_update_flag_supported: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,7 +80,7 @@ pub async fn detect(config: &CliConfig) -> Result<Option<DetectedCli>, CliError>
 async fn detect_fresh(config: &CliConfig) -> Result<Option<DetectedCli>, CliError> {
     let mut candidates = Vec::new();
     if let Some(configured) = configured_binary(config) {
-        candidates.push(prefer_hidden_agent(configured));
+        candidates.push(prefer_hidden_agent(&launch_agent_path(configured)));
     }
     candidates.extend(default_search_paths()?);
     if let Some(from_path) = look_on_path("agent") {
@@ -108,60 +105,29 @@ async fn detect_fresh(config: &CliConfig) -> Result<Option<DetectedCli>, CliErro
 }
 
 pub async fn probe(path: &Path) -> Result<DetectedCli, CliError> {
-    let with_flag = run_agent(path, &[DISABLE_AUTO_UPDATE, "--version"]).await;
-    match with_flag {
-        Ok(output) => {
-            let version = parse_version_output(&output)?;
-            Ok(DetectedCli {
-                path: path.to_path_buf(),
-                version,
-                auto_update_flag_supported: true,
-            })
-        }
-        Err(CliError::CommandFailed { stderr, .. })
-            if stderr.to_ascii_lowercase().contains("unknown option") =>
-        {
-            let output = run_agent(path, &["--version"]).await?;
-            let version = parse_version_output(&output)?;
-            Ok(DetectedCli {
-                path: path.to_path_buf(),
-                version,
-                auto_update_flag_supported: false,
-            })
-        }
-        Err(error) => Err(error),
-    }
+    let output = run_agent(path, &["--version"]).await?;
+    let version = parse_version_output(&output)?;
+    Ok(DetectedCli {
+        path: path.to_path_buf(),
+        version,
+    })
 }
 
-pub async fn about(path: &Path, auto_update_flag_supported: bool) -> Result<AboutJson, CliError> {
-    about_with_env(path, auto_update_flag_supported, None).await
+pub async fn about(path: &Path) -> Result<AboutJson, CliError> {
+    about_with_env(path, None).await
 }
 
-pub async fn about_with_env(
-    path: &Path,
-    auto_update_flag_supported: bool,
-    api_key: Option<&str>,
-) -> Result<AboutJson, CliError> {
-    let args = with_auto_update_flag(auto_update_flag_supported, &["about", "--format", "json"]);
-    let output = run_agent_with_env(path, &args, api_key).await?;
+pub async fn about_with_env(path: &Path, api_key: Option<&str>) -> Result<AboutJson, CliError> {
+    let output = run_agent_with_env(path, &["about", "--format", "json"], api_key).await?;
     serde_json::from_str(&output)
         .map_err(|error| CliError::msg(format!("agent about --format json: {error}")))
-}
-
-pub fn with_auto_update_flag(supported: bool, args: &[&'static str]) -> Vec<&'static str> {
-    let mut out = Vec::with_capacity(args.len() + 1);
-    if supported {
-        out.push(DISABLE_AUTO_UPDATE);
-    }
-    out.extend_from_slice(args);
-    out
 }
 
 pub async fn run_agent(path: &Path, args: &[&str]) -> Result<String, CliError> {
     run_agent_with_env(path, args, None).await
 }
 
-/// Spawn `agent` with `--disable-auto-update` already in `args` when supported.
+/// Spawn `agent`. Do not pass `--disable-auto-update`; Cursor owns CLI updates.
 ///
 /// `CURSOR_API_KEY` is removed from the child environment unless `api_key` is
 /// set. The key is never placed on argv. Do not `Debug`-format `command` after
@@ -250,21 +216,11 @@ mod tests {
     }
 
     #[test]
-    fn auto_update_flag_prefixes_when_supported() {
-        assert_eq!(
-            with_auto_update_flag(true, &["status", "--format", "json"]),
-            vec![DISABLE_AUTO_UPDATE, "status", "--format", "json"]
-        );
-        assert_eq!(with_auto_update_flag(false, &["logout"]), vec!["logout"]);
-    }
-
-    #[test]
     fn detect_cache_round_trips_until_invalidated() {
         invalidate_detect_cache();
         remember_detected(Some(DetectedCli {
             path: PathBuf::from("/tmp/missing-agent-cache-test"),
             version: "2026.10.19-6bbf2c4".into(),
-            auto_update_flag_supported: true,
         }));
         // Path is not a usable file, so the cache must not be reused.
         assert!(cached_if_usable().is_none());

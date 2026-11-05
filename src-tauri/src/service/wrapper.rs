@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use crate::cli::config::{configured_binary, load as load_cli};
-use crate::cli::paths::{default_search_paths, is_usable_file, look_on_path};
+use crate::cli::paths::{default_search_paths, is_usable_file, launch_agent_path, look_on_path};
 use crate::service::command::build_launch_plan;
 use crate::worker::config::load_records;
 use crate::worker::error::WorkerError;
@@ -61,7 +61,7 @@ pub fn resolve_agent_sync() -> Result<PathBuf, WorkerError> {
     let config = load_cli().map_err(|error| WorkerError::msg(error.to_string()))?;
     let mut candidates = Vec::new();
     if let Some(configured) = configured_binary(&config) {
-        candidates.push(configured.to_path_buf());
+        candidates.push(launch_agent_path(configured));
     }
     if let Ok(defaults) = default_search_paths() {
         candidates.extend(defaults);
@@ -105,7 +105,9 @@ pub fn run_supervised_worker(id: &str) -> Result<(), WorkerError> {
 
 /// Spawn the official CLI with stdout/stderr copied through a redacting writer.
 /// The wrapper stays the parent so secrets are stripped before they hit wrapper.log.
-pub fn spawn_logged_agent(plan: &crate::service::command::LaunchPlan) -> Result<Child, WorkerError> {
+pub fn spawn_logged_agent(
+    plan: &crate::service::command::LaunchPlan,
+) -> Result<Child, WorkerError> {
     let log = open_wrapper_log(plan)?;
     let mut command = prepare_agent_command(plan)?;
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -126,7 +128,9 @@ pub fn spawn_logged_agent(plan: &crate::service::command::LaunchPlan) -> Result<
 
 /// Shared spawn setup for service exec and in-app child mode. Never puts
 /// `--api-key` on argv. `CURSOR_API_KEY` is set only when auth method is api_key.
-pub fn prepare_agent_command(plan: &crate::service::command::LaunchPlan) -> Result<Command, WorkerError> {
+pub fn prepare_agent_command(
+    plan: &crate::service::command::LaunchPlan,
+) -> Result<Command, WorkerError> {
     let agent = crate::process::prefer_hidden_agent(&plan.agent);
     let mut command = Command::new(&agent);
     command
@@ -147,7 +151,9 @@ pub fn prepare_agent_command(plan: &crate::service::command::LaunchPlan) -> Resu
     Ok(command)
 }
 
-pub fn open_wrapper_log(plan: &crate::service::command::LaunchPlan) -> Result<std::fs::File, WorkerError> {
+pub fn open_wrapper_log(
+    plan: &crate::service::command::LaunchPlan,
+) -> Result<std::fs::File, WorkerError> {
     crate::privacy::ensure_private_dir(&plan.data_dir)?;
     let log_path = plan.data_dir.join(WRAPPER_LOG);
     rotate_if_needed(&log_path)?;
@@ -177,7 +183,8 @@ fn copy_redacted(mut reader: impl Read, mut writer: impl Write) {
         }
         while let Some(idx) = buf.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = buf.drain(..=idx).collect();
-            let _ = writer.write_all(crate::redact::redact(&String::from_utf8_lossy(&line)).as_bytes());
+            let _ =
+                writer.write_all(crate::redact::redact(&String::from_utf8_lossy(&line)).as_bytes());
         }
         if buf.len() > 64 * 1024 {
             let flushed = crate::redact::redact(&String::from_utf8_lossy(&buf));

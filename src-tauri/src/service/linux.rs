@@ -557,20 +557,21 @@ mod tests {
 
     #[cfg(unix)]
     fn user_systemd_available() -> bool {
-        user_systemctl(&["is-system-running"]).status.code().is_some()
-            && (std::env::var("XDG_RUNTIME_DIR").ok().is_some_and(|dir| {
-                PathBuf::from(dir).join("bus").exists()
-            }) || user_systemctl(&["show", "--property=Version"])
-                .status
-                .success())
+        user_systemctl(&["is-system-running"])
+            .status
+            .code()
+            .is_some()
+            && (std::env::var("XDG_RUNTIME_DIR")
+                .ok()
+                .is_some_and(|dir| PathBuf::from(dir).join("bus").exists())
+                || user_systemctl(&["show", "--property=Version"])
+                    .status
+                    .success())
     }
 
     #[cfg(unix)]
     fn user_systemctl(args: &[&str]) -> std::process::Output {
-        let direct = Command::new("systemctl")
-            .arg("--user")
-            .args(args)
-            .output();
+        let direct = Command::new("systemctl").arg("--user").args(args).output();
         if let Ok(output) = direct {
             if output.status.success()
                 || output.status.code().is_some() && !looks_like_missing_bus(&output)
@@ -595,15 +596,15 @@ mod tests {
             String::from_utf8_lossy(&output.stdout)
         )
         .to_ascii_lowercase();
-        text.contains("failed to connect")
-            || text.contains("no such file")
-            || text.contains("dbus")
+        text.contains("failed to connect") || text.contains("no such file") || text.contains("dbus")
     }
 
     #[test]
     fn linger_rejects_unsafe_user() {
         assert!(!crate::worker::validate::is_safe_session_user(""));
-        assert!(!crate::worker::validate::is_safe_session_user("alice;reboot"));
+        assert!(!crate::worker::validate::is_safe_session_user(
+            "alice;reboot"
+        ));
         assert!(crate::worker::validate::is_safe_session_user("alice"));
     }
 }

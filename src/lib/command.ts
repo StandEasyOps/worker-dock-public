@@ -28,7 +28,7 @@ export function previewStartCommand(input: {
   if (!name || dirs.length === 0) {
     return { startArgv: [], commandLine: "" };
   }
-  const startArgv = ["--disable-auto-update", "worker", "--name", name];
+  const startArgv = ["worker", "--name", name];
   for (const dir of dirs) {
     startArgv.push("--worker-dir", dir);
   }

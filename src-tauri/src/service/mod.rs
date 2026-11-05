@@ -100,7 +100,15 @@ pub fn runtime_for(record: &WorkerRecord, direct: &DirectWorker) -> RuntimeView 
     let restart_required = applied::restart_required(record, process_state, applied.as_ref());
     let direct_active = direct_snap.is_active();
     #[cfg(windows)]
-    let (job_name, installed, enabled, autostart_enabled, linger, can_enable_linger, autostart_note) = {
+    let (
+        job_name,
+        installed,
+        enabled,
+        autostart_enabled,
+        linger,
+        can_enable_linger,
+        autostart_note,
+    ) = {
         let job_name = windows::task_name(&record.id).unwrap_or_default();
         let query = windows::query(&record.id);
         let installed = !matches!(query, Ok(windows::TaskState::Missing) | Err(_));
@@ -116,7 +124,15 @@ pub fn runtime_for(record: &WorkerRecord, direct: &DirectWorker) -> RuntimeView 
         )
     };
     #[cfg(not(windows))]
-    let (job_name, installed, enabled, autostart_enabled, linger, can_enable_linger, autostart_note) = {
+    let (
+        job_name,
+        installed,
+        enabled,
+        autostart_enabled,
+        linger,
+        can_enable_linger,
+        autostart_note,
+    ) = {
         let job_name = linux::unit_name(&record.id).unwrap_or_default();
         let linger = match linux::linger_state() {
             linux::LingerState::Enabled => "enabled",

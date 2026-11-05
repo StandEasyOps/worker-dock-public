@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::cli::detect::{detect, run_agent_with_env, with_auto_update_flag};
+use crate::cli::detect::{detect, run_agent_with_env};
 use config::{METHOD_API_KEY, METHOD_CLI_LOGIN, load_auth_method, save_auth_method};
 use error::AuthError;
 use keychain::{delete_api_key, has_api_key, load_api_key, save_api_key, validate_personal_key};
@@ -157,8 +157,7 @@ pub async fn auth_sign_out(state: State<'_, AuthState>) -> Result<AuthStatus, Au
     cancel_session(&state).await;
     let config = crate::cli::config::load()?;
     if let Some(detected) = detect(&config).await? {
-        let args = with_auto_update_flag(detected.auto_update_flag_supported, &["logout"]);
-        let _ = run_agent_with_env(&detected.path, &args, None).await;
+        let _ = run_agent_with_env(&detected.path, &["logout"], None).await;
     }
     tokio::task::spawn_blocking(delete_api_key)
         .await
@@ -220,27 +219,23 @@ pub(crate) async fn build_status(browser_login_active: bool) -> Result<AuthStatu
         None
     };
 
-    let status_args = with_auto_update_flag(
-        found.auto_update_flag_supported,
+    let (is_authenticated, mut message) = match run_agent_with_env(
+        &found.path,
         &["status", "--format", "json"],
-    );
-    let (is_authenticated, mut message) =
-        match run_agent_with_env(&found.path, &status_args, inject.as_deref()).await {
-            Ok(output) => match serde_json::from_str::<StatusJson>(&output) {
-                Ok(parsed) => (parsed.is_authenticated, parsed.message),
-                Err(_) => (false, Some("Official CLI status was not JSON.".to_string())),
-            },
-            Err(error) => (false, Some(error.to_string())),
-        };
+        inject.as_deref(),
+    )
+    .await
+    {
+        Ok(output) => match serde_json::from_str::<StatusJson>(&output) {
+            Ok(parsed) => (parsed.is_authenticated, parsed.message),
+            Err(_) => (false, Some("Official CLI status was not JSON.".to_string())),
+        },
+        Err(error) => (false, Some(error.to_string())),
+    };
 
     let mut user_email = None;
     if is_authenticated || inject.is_some() {
-        if let Ok(about) = crate::cli::detect::about_with_env(
-            &found.path,
-            found.auto_update_flag_supported,
-            inject.as_deref(),
-        )
-        .await
+        if let Ok(about) = crate::cli::detect::about_with_env(&found.path, inject.as_deref()).await
         {
             user_email = about
                 .user_email
