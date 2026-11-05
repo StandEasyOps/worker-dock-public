@@ -40,8 +40,8 @@ pub fn config_dir() -> Result<PathBuf, CliError> {
         return Ok(PathBuf::from(xdg).join("worker-dock"));
     }
     if cfg!(windows) {
-        let appdata = nonempty_env("APPDATA")
-            .ok_or_else(|| CliError::msg("%APPDATA% is not set"))?;
+        let appdata =
+            nonempty_env("APPDATA").ok_or_else(|| CliError::msg("%APPDATA% is not set"))?;
         return Ok(PathBuf::from(appdata)
             .join("StandEasyOps")
             .join("WorkerDock"));
@@ -91,18 +91,22 @@ pub fn linux_shim_dir() -> Result<PathBuf, CliError> {
 }
 
 pub fn windows_shim_dir() -> Result<PathBuf, CliError> {
-    let local = nonempty_env("LOCALAPPDATA")
-        .ok_or_else(|| CliError::msg("%LOCALAPPDATA% is not set"))?;
+    let local =
+        nonempty_env("LOCALAPPDATA").ok_or_else(|| CliError::msg("%LOCALAPPDATA% is not set"))?;
     Ok(PathBuf::from(local).join("cursor-agent"))
 }
 
 /// Official download used by https://cursor.com/install (Linux) and ?win32=true (Windows).
 pub fn official_archive_url(version: &str, os: HostOs, arch: &str) -> Result<url::Url, CliError> {
     if !crate::cli::version::is_cli_version(version) {
-        return Err(CliError::msg("refusing to build a download URL for an invalid version"));
+        return Err(CliError::msg(
+            "refusing to build a download URL for an invalid version",
+        ));
     }
     if !matches!(arch, "x64" | "arm64") {
-        return Err(CliError::msg(format!("unsupported archive architecture {arch}")));
+        return Err(CliError::msg(format!(
+            "unsupported archive architecture {arch}"
+        )));
     }
     let (platform, filename) = match os {
         HostOs::Linux => ("linux", "agent-cli-package.tar.gz"),
@@ -182,21 +186,53 @@ fn nonempty_env(key: &str) -> Option<String> {
         .filter(|value| !value.trim().is_empty())
 }
 
+/// `~/.local/bin/agent` on Linux, `%LOCALAPPDATA%\cursor-agent\agent.exe` on Windows.
+/// Cursor's updater retargets this path. Do not canonicalize it.
+pub fn official_agent_shim() -> Result<PathBuf, CliError> {
+    match host_os() {
+        HostOs::Linux => Ok(linux_shim_dir()?.join("agent")),
+        HostOs::Windows => Ok(windows_shim_dir()?.join("agent.exe")),
+    }
+}
+
+/// Path worker-dock should exec.
+///
+/// A canonical file under `versions/<ver>/` stays on the archive we extracted.
+/// When the official shim exists, launch that instead so a Cursor update applies
+/// on the next start.
+pub fn launch_agent_path(configured: &Path) -> PathBuf {
+    let Ok(shim) = official_agent_shim() else {
+        return configured.to_path_buf();
+    };
+    let Ok(versions) = official_versions_dir() else {
+        return configured.to_path_buf();
+    };
+    prefer_shim_over_versioned(configured, &shim, &versions)
+}
+
+pub fn prefer_shim_over_versioned(configured: &Path, shim: &Path, versions_dir: &Path) -> PathBuf {
+    if !is_usable_file(shim) {
+        return configured.to_path_buf();
+    }
+    let under_versions =
+        !versions_dir.as_os_str().is_empty() && configured.starts_with(versions_dir);
+    if configured.as_os_str().is_empty() || configured == shim || under_versions {
+        shim.to_path_buf()
+    } else {
+        configured.to_path_buf()
+    }
+}
+
 pub fn default_search_paths() -> Result<Vec<PathBuf>, CliError> {
     let mut paths = Vec::new();
     let os = host_os();
+    // Shim first. The pinned archive is only a fallback when the shim is missing.
+    paths.push(official_agent_shim()?);
+    if os == HostOs::Windows {
+        paths.push(windows_shim_dir()?.join("cursor-agent.exe"));
+    }
     let pinned_dir = official_version_dir(PINNED_VERSION)?;
     paths.push(pinned_dir.join(binary_name_in_version_dir(os)));
-    match os {
-        HostOs::Linux => {
-            paths.push(linux_shim_dir()?.join("agent"));
-        }
-        HostOs::Windows => {
-            let shims = windows_shim_dir()?;
-            paths.push(shims.join("agent.exe"));
-            paths.push(shims.join("cursor-agent.exe"));
-        }
-    }
     Ok(paths)
 }
 
@@ -226,6 +262,45 @@ mod tests {
     fn rejects_path_version() {
         assert!(official_archive_url("../evil", HostOs::Linux, "x64").is_err());
         assert!(official_archive_url("2026.10.19-6bbf2c4", HostOs::Linux, "ppc").is_err());
+    }
+
+    #[test]
+    fn versioned_binary_launches_through_the_shim() {
+        let root = tempfile::tempdir().unwrap();
+        let versions = root.path().join("versions");
+        let versioned = versions.join("2026.10.19-6bbf2c4").join("cursor-agent");
+        std::fs::create_dir_all(versioned.parent().unwrap()).unwrap();
+        std::fs::write(&versioned, b"old").unwrap();
+        let shim = root.path().join("bin").join("agent");
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::fs::write(&shim, b"shim").unwrap();
+
+        assert_eq!(
+            prefer_shim_over_versioned(&versioned, &shim, &versions),
+            shim
+        );
+        assert_eq!(prefer_shim_over_versioned(&shim, &shim, &versions), shim);
+        let custom = root.path().join("custom").join("agent");
+        std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
+        std::fs::write(&custom, b"custom").unwrap();
+        assert_eq!(
+            prefer_shim_over_versioned(&custom, &shim, &versions),
+            custom
+        );
+    }
+
+    #[test]
+    fn missing_shim_keeps_the_versioned_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let versions = root.path().join("versions");
+        let versioned = versions.join("2026.10.19-6bbf2c4").join("cursor-agent");
+        std::fs::create_dir_all(versioned.parent().unwrap()).unwrap();
+        std::fs::write(&versioned, b"old").unwrap();
+        let shim = root.path().join("bin").join("agent");
+        assert_eq!(
+            prefer_shim_over_versioned(&versioned, &shim, &versions),
+            versioned
+        );
     }
 
     #[test]

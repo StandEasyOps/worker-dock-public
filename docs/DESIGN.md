@@ -24,7 +24,7 @@ Sources (read 2026-10-20):
 
 ### Goals
 
-- Let a developer install the official `agent` CLI from the official versioned archive (same files as `https://cursor.com/install`), see its version, keep it pinned, and update only to a vetted build.
+- Let a developer install the official `agent` CLI from the official versioned archive (same files as `https://cursor.com/install`), see its version, and leave later updates to Cursor.
 - Sign in with browser login (`agent login`) or a **personal** user API key stored in the OS keychain.
 - Configure one or more **named** personal workers: repo folders, display name, and documented opt-in flags.
 - Run each worker as a **per-user** background job that survives closing the app and (when linger / logon tasks are enabled) reboot, using the signed-in user’s identity.
@@ -60,7 +60,7 @@ The Rust + Tauri 2 direction is accepted (see [TECH-CHOICE.md](TECH-CHOICE.md)).
 6. **Survive reboot:** After reboot, the unit/task starts again without opening the UI (Linux linger or Windows logon task).
 7. **Watch logs:** The Logs screen tails the supervised process and the CLI session log directory.
 8. **Fix “machine missing”:** I run Preflight. The app hits the required hosts over TLS and runs `agent worker debug --json`, then explains auth, repo remotes, and visibility in plain language.
-9. **Update:** The app tells me when worker-dock has a new release, and when a **vetted** official CLI is newer than the install. Official latest that is not in our pin list is shown but not applied. I can update each independently.
+9. **Update:** Cursor updates the official CLI. worker-dock installs the first archive, then launches the agent shim and does not pin that binary. A worker-dock app update is separate and is not built in this slice.
 10. **Tray:** From the tray I start/stop the service or the child worker, open the window, or quit the UI (an installed service keeps running; a child worker stops).
 
 ## 3. Architecture
@@ -146,7 +146,7 @@ Auth is **environment or CLI login**, never `--api-key` on the argv (process lis
 
 - One OS job per named worker. One `--data-dir` per worker (`~/.local/share/worker-dock/workers/<id>/` or `%LOCALAPPDATA%\StandEasyOps\WorkerDock\workers\<id>\`).
 - Restart policy: restart on crash; do **not** treat a clean idle-release exit as success we ignore — we pass timeout `0` so that path should not fire.
-- PATH: do not assume `~/.local/bin` is visible to GUI/service context. Store the resolved `agent` path after install, and re-resolve on CLI update (symlink under `~/.local/bin/agent` is the Linux source of truth).
+- PATH: do not assume `~/.local/bin` is visible to GUI/service context. Store and exec the shim (`~/.local/bin/agent` on Linux), not the canonical file under `versions/<ver>/`. Cursor retargets that shim.
 - Working directory: the first worker-dir, or the data dir if none yet.
 - Logs: wrapper stdout/stderr to a rotating file under the worker data dir **and** to the OS journal / task history.
 
@@ -246,7 +246,7 @@ Rust crate: `keyring`. Never log the secret. Never put it on argv (`--api-key` i
 ### Implementation notes (sign-in PR)
 
 - Commands: `auth_status`, `auth_start_browser_login`, `auth_cancel_browser_login`, `auth_save_api_key`, `auth_sign_out`.
-- Browser flow matches the spike: `NO_OPEN_BROWSER=1` plus `--disable-auto-update`, parse stdout for `https://cursor.com/loginDeepControl`, require `redirectTarget=cli`, refuse other hosts/schemes/userinfo/ports, then `open` that URL only. Cancel kills the login process. Poll `agent status --format json` until `isAuthenticated` is true (15 minute cap).
+- Browser flow matches the spike: `NO_OPEN_BROWSER=1 agent login`, parse stdout for `https://cursor.com/loginDeepControl`, require `redirectTarget=cli`, refuse other hosts/schemes/userinfo/ports, then `open` that URL only. Cancel kills the login process. Poll `agent status --format json` until `isAuthenticated` is true (15 minute cap). Do not pass `--disable-auto-update`.
 - If the OS cannot open a browser (`xdg-open` / Windows start), the UI still shows the allowlisted URL so the user can copy it.
 - Personal API key: `keyring` 4 (`v1` API). Service `ops.standeasy.worker-dock`, account `personal-api-key`. Never logged, never `--api-key` on argv. Injected as `CURSOR_API_KEY` only when `[auth].method = "api_key"`. Other `agent` spawns remove that env var so a leftover shell key cannot override CLI-file login.
 - Team / org / service-account keys are rejected conceptually. There is no reliable format detector; worker-dock does not call pool APIs.
@@ -281,12 +281,12 @@ check_app_updates = true
 check_cli_updates = true
 
 [cli]
-# Absolute path to the official binary after install/resolve.
-# Linux official layout: ~/.local/bin/agent -> ~/.local/share/cursor-agent/versions/<ver>/cursor-agent
+# Shim path, not the canonical file under versions/<ver>/.
+# Linux: ~/.local/bin/agent -> ~/.local/share/cursor-agent/versions/<ver>/cursor-agent
 path = ""
 install_method = "official_archive"  # official_archive | official_script | manual
-pinned_version = "2026.10.19-6bbf2c4"
-disable_auto_update = true
+pinned_version = "2026.10.19-6bbf2c4"  # archive used only for the first install
+disable_auto_update = false  # ignored; worker-dock does not pass --disable-auto-update
 
 [auth]
 # How workers authenticate. Secrets are not stored here.
@@ -333,7 +333,7 @@ Rules:
 - Windows: Task Scheduler XML imported with `schtasks` (`StandEasyOps\WorkerDock\<id>`), `InteractiveToken`, least privilege, logon trigger, restart 3× / 1 minute. Not SYSTEM. Git Bash is checked at Start (not a full Preflight screen).
 - Closing the UI does not stop the job. Stop = `systemctl --user stop` / `schtasks /End`. There is still no `agent worker stop`.
 - `CURSOR_API_KEY` is injected by the wrapper from the keychain only when `[auth].method = "api_key"`. It is never in the unit file, task XML, or argv.
-- `--disable-auto-update` is the first CLI argument. `--management-addr` is `127.0.0.1:<port>` only. `--computer-use` / `--display` / `--connect-workspace` are omitted on Windows.
+- Do not pass `--disable-auto-update`. `--management-addr` is `127.0.0.1:<port>` only. `--computer-use` / `--display` / `--connect-workspace` are omitted on Windows. The wrapper execs the agent shim.
 - Runtime chips are `stopped` / `starting` / `running` / `failed` from the OS job. `/readyz` and live logs landed in the next PR. Wrapper stdout/stderr append to `<data-dir>/wrapper.log` (rotated at 5 MB).
 
 ### Implementation notes (status and live logs PR)
@@ -444,17 +444,16 @@ Two independent updaters. Never update the CLI by overwriting files inside `~/.l
 
 ### Official CLI
 
-- Detect: resolved path (config, official layout, then `PATH`), then `agent --disable-auto-update --version` and `agent --disable-auto-update about --format json`.
-- **Pin:** `VETTED_VERSIONS` in Rust, currently `2026.10.19-6bbf2c4` (spike + live install script on 2026-10-20). The UI installs that archive, not “whatever the install script now points at.”
+- Detect: shim first (then a saved path, the official layout, and `PATH`), then `agent --version` and `agent about --format json`. A saved path inside `versions/<ver>/` is launched through the shim when the shim exists.
+- **First install:** `VETTED_VERSIONS` in Rust, currently `2026.10.19-6bbf2c4` (spike + live install script on 2026-10-20). The UI installs that archive when `agent` is missing, not “whatever the install script now points at.”
 - **Install:** HTTPS GET of the same official package the installers use:
   - Linux: `https://downloads.cursor.com/lab/<ver>/linux/{x64,arm64}/agent-cli-package.tar.gz` → `~/.local/share/cursor-agent/versions/<ver>/` + `~/.local/bin/agent` symlink
   - Windows: `https://downloads.cursor.com/lab/<ver>/windows/{x64,arm64}/agent-cli-package.zip` → `%LOCALAPPDATA%\cursor-agent\versions\<ver>\` + `agent.exe` shims
 - worker-dock does **not** pipe `curl | bash` / `irm | iex`. Those scripts are fetched only to read the current official version string. Show the archive URL and require a click.
 - Each vetted archive has a pinned SHA-256 in `ARCHIVE_SHA256`. The downloader hashes the stream and refuses to extract on mismatch. Bump the digest when adding a version.
-- **Auto-update:** disabled. Every worker-dock spawn of `agent` passes `--disable-auto-update` (changelog-documented; hidden from `--help` on the spike build). We do not run `agent update` except as an implementation detail of a vetted UI action.
-- **Update action:** enabled only when the installed build is not the newest vetted version. If the official latest is newer and unvetted, the UI says so and does not install it.
-- After install/update, re-resolve the binary and store `cli.path`. Do not assume `~/.local/bin` is on GUI `PATH`.
-- Bump the pin by appending to `VETTED_VERSIONS` after a compatibility check (`--version`, `about --format json`, later `status` / `worker debug --json`).
+- **Auto-update:** left to Cursor. worker-dock does not pass `--disable-auto-update` and does not run `agent update`. Settings does not offer a vetted CLI update.
+- After the first install, store the shim in `cli.path` and exec that path. Do not canonicalize it to `versions/<ver>/`. Do not assume `~/.local/bin` is on GUI `PATH`.
+- Bump `VETTED_VERSIONS` only when the first-install archive should change. A newer Cursor release does not require a worker-dock release.
 
 ## 10. Packaging and distribution
 
@@ -534,7 +533,7 @@ Secrets (GitHub Environment `release`, unused until signing): Azure tenant/clien
 - **CLI integrity.** Official archives are HTTPS-only and SHA-256 pinned per version/os/arch.
 - **Command injection.** Worker dirs and names are data, not shell. `ExecStart` is argv via the wrapper, not `sh -c`.
 - **Install script.** Official `curl | bash` / `irm | iex` is what upstream documents. Show the URL (`https://cursor.com/install`) and require an explicit click. Pinning the script body is a later hardening option.
-- **CLI auto-update.** Official CLI auto-update is untrusted input. worker-dock disables it (`--disable-auto-update`) and only applies vetted pins from the UI. Stop workers before a prompted update once services exist.
+- **CLI auto-update.** Cursor updates the official CLI. worker-dock launches the shim and does not pass `--disable-auto-update`. A new CLI can still change flags or `debug --json`; that shows up as a worker-dock failure until the app adapts.
 - **Live workspace.** Linux `--connect-workspace` gives anyone who can open the agent a terminal as the worker OS user (including teammates if VM sharing is on). Default **off**. Explain before enable.
 - **Computer use / share-desktop.** Default **off**. Sharing the real desktop (macOS share-desktop) is a later-mac concern; Linux share-desktop uses an isolated desktop. Clipboard stays blocked on share-desktop per upstream.
 - **Identity socket.** Default **off**. Any process as the user can mint OIDC tokens for the claimed run.
@@ -563,7 +562,7 @@ Preflight: DNS, TCP 443 (skipped when a proxy env var is set), then HTTPS GET. R
 
 - Commands: `diag_run`. One Preflight button runs the host table and then `agent worker debug --json`.
 - Allowlisted hosts only, `https://<host>/` with no userinfo, port, path, or query. Required: `api2.cursor.sh`, `api2direct.cursor.sh`, `downloads.cursor.com`, `cursor.com`. Artifact (warning only): the two S3 buckets. Optional: `cursor.blob.core.windows.net`.
-- Debug argv: `--disable-auto-update worker --name … --worker-dir … debug --json`. Same name and folders as the saved worker. Never `--pool` or `--api-key`. `CURSOR_API_KEY` is injected only when `[auth].method = "api_key"`. Output is redacted. Schema is treated as unstable; known fields (`auth.method`, `worker.workerId`, `visibilityProbe`, `computerUse`, `desktopShare`, `warnings`) are shown when present.
+- Debug argv: `worker --name … --worker-dir … debug --json`. Same name and folders as the saved worker. Never `--pool` or `--api-key`. `CURSOR_API_KEY` is injected only when `[auth].method = "api_key"`. Output is redacted. Schema is treated as unstable; known fields (`auth.method`, `worker.workerId`, `visibilityProbe`, `computerUse`, `desktopShare`, `warnings`) are shown when present.
 - Unauthenticated debug still runs so the UI can show the CLI’s text error. Debug is skipped if the CLI or worker name/folders are missing.
 - Windows Git Bash is a required Preflight check. Linux has no Git Bash row.
 - CI packaging (`.deb` / MSI workflows) landed in the next PR.
@@ -574,7 +573,7 @@ Preflight: DNS, TCP 443 (skipped when a proxy env var is set), then HTTPS GET. R
 | --- | --- | --- | --- |
 | 1 | Official CLI flags, defaults, and help drift (already: docs say idle default `0`, live CLI default `3600`; `--auth-token` documented but missing from worker help) | High | Pin a compatibility matrix; gold-file `agent worker --help`; never parse English help as API |
 | 2 | No `worker status` / `worker list` / `worker stop`; REST list is service-account-only | High | Local supervisor + localhost `/healthz` `/readyz`; debug JSON for visibility |
-| 3 | A new official `2026.x` build breaks start/debug JSON | High | Pin + disable auto-update; smoke-test before adding a version to `VETTED_VERSIONS` |
+| 3 | A new official `2026.x` build breaks start/debug JSON | High | Cursor ships the CLI. Smoke-test when start or debug JSON breaks, then adapt worker-dock |
 | 4 | Windows Git Bash + user-session vs Task Scheduler “run whether logged on” | High | Preflight Git Bash; default to interactive-user tasks |
 | 5 | Azure Trusted Signing + winget review + SmartScreen delay a real Windows launch | Medium | Sideload signed MSI for early testers; start the winget PR as soon as v1 ships |
 | 6 | Linux WebKitGTK / tray / PATH-in-GUI | Medium | Ubuntu 22.04+24.04 test matrix; resolve `agent` ourselves |
@@ -590,7 +589,7 @@ Preflight: DNS, TCP 443 (skipped when a proxy env var is set), then HTTPS GET. R
 ### MVP (Windows + Ubuntu, one happy path)
 
 - Tauri 2 skeleton, tray, First run, Sign in, Home (at least one worker), Logs, Preflight, Settings.
-- Official CLI detect / pinned archive install / `--disable-auto-update` / vetted update action.
+- Official CLI detect / first-install archive / launch the agent shim and let Cursor update it.
 - Browser login + personal API key (keychain).
 - Generate systemd user unit **or** per-user scheduled task with wrapper, `--idle-release-timeout 0`, isolated `--data-dir`, localhost `--management-addr`.
 - Start/stop/autostart, live logs.
@@ -628,7 +627,7 @@ Out of MVP: multiple concurrent workers can be in the data model but only one en
 3. winget id is `StandEasyOps.WorkerDock` (documented, not published). Public download/apt host placeholder is `get.standeasyops.com` (not provisioned). Confirm before buying DNS.
 4. Will Stand Easy Ops obtain Azure Trusted Signing and an Apple Developer ID before M2/M3, or do we sideload until then?
 5. Should worker-dock **ever** grow Team Pool / service-account support, or is that a different product?
-6. Default CLI auto-update: **Disable.** worker-dock always invokes `agent` with `--disable-auto-update` and only applies a vetted pin from the UI.
+6. Default CLI auto-update: **Leave it to Cursor.** worker-dock does not pass `--disable-auto-update`. The first install is still a hashed archive. After that, the app execs the agent shim.
 7. Windows supervision in this slice: **Task Scheduler** (interactive user). WinSW was not needed.
 8. UI implementation inside Tauri: **Svelte** (SvelteKit + `@sveltejs/adapter-static` in SPA mode, official `create-tauri-app` `svelte-ts` template). Vanilla TypeScript was the original TECH-CHOICE.md recommendation; the owner chose Svelte for the scaffold.
 9. Placeholder host is `https://get.standeasyops.com`. A winget crawler-reachable hostname is still required before publishing; do not use a GitHub vanity that 403s.

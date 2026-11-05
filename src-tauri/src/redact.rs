@@ -179,7 +179,10 @@ fn next_token_start(text: &str) -> Option<(usize, TokenKind)> {
         }
     });
     let jwt = text.find("eyJ").map(|idx| (idx, TokenKind::Jwt));
-    [bearer, sk, jwt].into_iter().flatten().min_by_key(|(idx, _)| *idx)
+    [bearer, sk, jwt]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(idx, _)| *idx)
 }
 
 fn skip_token(text: &str) -> &str {
@@ -209,7 +212,10 @@ mod tests {
         assert!(!cleaned.contains("eyJabc.def.ghi"));
         assert!(cleaned.contains("Bearer ***"));
         assert!(cleaned.contains("CURSOR_API_KEY=***"));
-        assert!(cleaned.contains("\"accessToken\": \"***\"") || cleaned.contains("\"accessToken\": \"***\""));
+        assert!(
+            cleaned.contains("\"accessToken\": \"***\"")
+                || cleaned.contains("\"accessToken\": \"***\"")
+        );
         assert!(cleaned.contains("not a secret line"));
         assert!(cleaned.contains("a@b.c"));
     }

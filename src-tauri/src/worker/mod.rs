@@ -246,7 +246,13 @@ fn worker_is_busy(runtime: &RuntimeView, has_claim: bool) -> bool {
 fn resolve_agent_path() -> String {
     load_cli_config()
         .ok()
-        .and_then(|config| configured_binary(&config).map(|path| path.display().to_string()))
+        .and_then(|config| {
+            configured_binary(&config).map(|path| {
+                crate::cli::paths::launch_agent_path(path)
+                    .display()
+                    .to_string()
+            })
+        })
         .filter(|path| !path.is_empty())
         .unwrap_or_else(|| "agent".to_string())
 }
@@ -563,8 +569,8 @@ mod tests {
             "idleReleaseTimeout": 0,
             "dataDir": "/tmp/data",
             "agentPath": "/tmp/agent",
-            "startArgv": ["--disable-auto-update", "worker", "--name", "my-devbox", "start"],
-            "commandLine": "/tmp/agent --disable-auto-update worker --name my-devbox start --verbose",
+            "startArgv": ["worker", "--name", "my-devbox", "start"],
+            "commandLine": "/tmp/agent worker --name my-devbox start --verbose",
             "runtime": {
                 "state": "stopped",
                 "headline": "not_ready",
@@ -595,8 +601,8 @@ mod tests {
             }
         });
         let view: serde_json::Value = json;
-        assert_eq!(view["startArgv"][1], "worker");
-        assert_eq!(view["startArgv"][2], "--name");
+        assert_eq!(view["startArgv"][0], "worker");
+        assert_eq!(view["startArgv"][1], "--name");
         assert!(
             !view["commandLine"]
                 .as_str()

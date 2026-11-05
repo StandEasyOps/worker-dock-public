@@ -46,8 +46,6 @@ const CLI_OK: CliStatus = {
   onPinned: true,
   updateAvailable: false,
   officialNewerUnvetted: false,
-  autoUpdateDisabled: true,
-  autoUpdateFlagSupported: true,
   archiveUrl: "https://downloads.cursor.com/lab/2026.10.19-6bbf2c4/linux/x64/agent-cli-package.tar.gz",
   installScriptUrl: "https://cursor.com/install",
 };
@@ -92,7 +90,7 @@ function foldersTwo(): WorkerView["workerDirs"] {
 }
 
 function startArgv(name: string, dirs: string[]): string[] {
-  const argv = ["--disable-auto-update", "worker", "--name", name];
+  const argv = ["worker", "--name", name];
   for (const dir of dirs) {
     argv.push("--worker-dir", dir);
   }
@@ -153,7 +151,7 @@ const LOGS: LogsSnapshot = {
       name: "wrapper",
       path: "/home/dev/.local/share/worker-dock/workers/8f3c2a10-2b1e-4d3a-9c0a-1b2c3d4e5f60/wrapper.log",
       exists: true,
-      text: "starting /home/dev/.local/bin/agent --disable-auto-update worker --name my-devbox --worker-dir /home/dev/repos/app --worker-dir /home/dev/repos/infra start --verbose\nINFO Starting in worker mode\nPrivate worker started",
+      text: "starting /home/dev/.local/bin/agent worker --name my-devbox --worker-dir /home/dev/repos/app --worker-dir /home/dev/repos/infra start --verbose\nINFO Starting in worker mode\nPrivate worker started",
       truncated: false,
     },
     {

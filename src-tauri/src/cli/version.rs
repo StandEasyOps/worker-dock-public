@@ -79,9 +79,10 @@ pub fn is_cli_version(value: &str) -> bool {
     let date_ok = date.len() == 10
         && date.as_bytes()[4] == b'.'
         && date.as_bytes()[7] == b'.'
-        && date.bytes().enumerate().all(|(index, byte)| {
-            matches!(index, 4 | 7) || byte.is_ascii_digit()
-        });
+        && date
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit());
     date_ok && hash.len() >= 7 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 

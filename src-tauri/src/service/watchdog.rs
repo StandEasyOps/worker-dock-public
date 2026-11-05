@@ -339,7 +339,10 @@ mod tests {
     fn finish_restart_writes_a_visible_note() {
         let wd = Watchdog::default();
         wd.intend_direct();
-        assert!(begin_restart(&wd, "Worker process exited; watchdog is restarting it."));
+        assert!(begin_restart(
+            &wd,
+            "Worker process exited; watchdog is restarting it."
+        ));
         finish_restart_ok(&wd);
         let mut runtime = crate::service::runtime_for(
             &crate::worker::config::WorkerRecord::defaults(

@@ -13,7 +13,7 @@ use crate::auth::error::AuthError;
 use crate::auth::{
     AuthProgress, AuthStatus, build_status, invalidate_auth_cache, store_auth_cache,
 };
-use crate::cli::detect::{DISABLE_AUTO_UPDATE, detect};
+use crate::cli::detect::detect;
 use crate::cli::error::CliError;
 use crate::process::{hide_tokio_window, prefer_hidden_agent, track_tokio_pid};
 
@@ -89,11 +89,7 @@ pub async fn start_browser_login(
 
     emit(app, "starting", "Starting official CLI login", None);
 
-    let mut args = Vec::new();
-    if detected.auto_update_flag_supported {
-        args.push(DISABLE_AUTO_UPDATE);
-    }
-    args.push("login");
+    let args = ["login"];
 
     let agent = prefer_hidden_agent(&detected.path);
     let mut command = Command::new(&agent);

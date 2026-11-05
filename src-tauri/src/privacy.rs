@@ -139,9 +139,8 @@ fn restrict_windows(path: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 fn current_windows_account() -> io::Result<String> {
-    let user = std::env::var("USERNAME").map_err(|_| {
-        io::Error::new(io::ErrorKind::NotFound, "%USERNAME% is not set")
-    })?;
+    let user = std::env::var("USERNAME")
+        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "%USERNAME% is not set"))?;
     if !is_safe_account_part(&user) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -191,15 +190,24 @@ mod tests {
         let dir = tempdir().unwrap();
         let folder = dir.path().join("data");
         ensure_private_dir(&folder).unwrap();
-        assert_eq!(fs::metadata(&folder).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&folder).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         let file = folder.join("config.toml");
         write_private_file(&file, "schema_version = 1\n").unwrap();
-        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(fs::read_to_string(&file).unwrap(), "schema_version = 1\n");
         let log = folder.join("wrapper.log");
         let handle = open_private_append(&log).unwrap();
         drop(handle);
-        assert_eq!(fs::metadata(&log).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&log).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[cfg(unix)]
@@ -208,7 +216,9 @@ mod tests {
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         let dir = tempdir().unwrap();
         let root = dir.path().join("worker-dock");
-        let workers = root.join("workers").join("8f3c2a10-2b1e-4d3a-9c0a-1b2c3d4e5f60");
+        let workers = root
+            .join("workers")
+            .join("8f3c2a10-2b1e-4d3a-9c0a-1b2c3d4e5f60");
         fs::create_dir_all(&workers).unwrap();
         let config = root.join("config.toml");
         OpenOptions::new()
@@ -230,7 +240,10 @@ mod tests {
             fs::set_permissions(path, permissions).unwrap();
         }
         tighten_tree(&root).unwrap();
-        assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         assert_eq!(
             fs::metadata(workers.parent().unwrap())
                 .unwrap()
@@ -239,8 +252,17 @@ mod tests {
                 & 0o777,
             0o700
         );
-        assert_eq!(fs::metadata(&workers).unwrap().permissions().mode() & 0o777, 0o700);
-        assert_eq!(fs::metadata(&config).unwrap().permissions().mode() & 0o777, 0o600);
-        assert_eq!(fs::metadata(&log).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&workers).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&config).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&log).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }

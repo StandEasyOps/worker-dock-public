@@ -15,7 +15,7 @@ use detect::DetectedCli;
 use error::CliError;
 use install::Progress;
 use paths::{host_arch, host_os, official_archive_url, official_install_script_url};
-use version::{is_vetted, newest_vetted, PINNED_VERSION};
+use version::{PINNED_VERSION, is_vetted, newest_vetted};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,8 +28,6 @@ pub struct CliStatus {
     pub on_pinned: bool,
     pub update_available: bool,
     pub official_newer_unvetted: bool,
-    pub auto_update_disabled: bool,
-    pub auto_update_flag_supported: bool,
     pub archive_url: String,
     pub install_script_url: String,
 }
@@ -55,7 +53,7 @@ pub async fn status() -> Result<CliStatus, CliError> {
     let mut official_latest = install::fetch_official_latest().await.ok().flatten();
     if official_latest.is_none() {
         if let Some(found) = detected.as_ref() {
-            if let Ok(about) = detect::about(&found.path, found.auto_update_flag_supported).await {
+            if let Ok(about) = detect::about(&found.path).await {
                 official_latest = about.latest_version;
             }
         }
@@ -94,13 +92,6 @@ fn build_status(
         on_pinned,
         update_available,
         official_newer_unvetted,
-        auto_update_disabled: config.disable_auto_update
-            && detected
-                .map(|item| item.auto_update_flag_supported)
-                .unwrap_or(true),
-        auto_update_flag_supported: detected
-            .map(|item| item.auto_update_flag_supported)
-            .unwrap_or(true),
         archive_url,
         install_script_url,
     }
@@ -133,23 +124,14 @@ async fn apply_vetted_version(app: &AppHandle, version: &str) -> Result<CliStatu
     let shim = install::link_shims(&version_dir)?;
     emit(app, "verifying", shim.display().to_string());
     let detected = detect::probe(&shim).await?;
-    if detected.version != version {
-        return Err(CliError::msg(format!(
-            "installed {} but expected {version}",
-            detected.version
-        )));
-    }
-    if !detected.auto_update_flag_supported {
-        return Err(CliError::msg(
-            "this official CLI build does not accept --disable-auto-update",
-        ));
-    }
-    let resolved = canonicalize_or(&detected.path);
+    // The archive hash already checked the bytes. `--version` may follow Cursor's
+    // updater and report a newer build; keep that version. Store the shim, not
+    // the canonical file under versions/<ver>/.
     let mut config = config::load()?;
-    config.path = resolved.display().to_string();
+    config.path = shim.display().to_string();
     config.install_method = "official_archive".to_string();
     config.pinned_version = version.to_string();
-    config.disable_auto_update = true;
+    config.disable_auto_update = false;
     config::save_cli_fields(&config)?;
     detect::invalidate_detect_cache();
     detect::remember_detected(Some(detected.clone()));
@@ -168,10 +150,6 @@ fn emit(app: &AppHandle, phase: &str, detail: impl Into<String>) {
     );
 }
 
-fn canonicalize_or(path: &std::path::Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,7 +160,6 @@ mod tests {
         assert!(!status.present);
         assert!(!status.update_available);
         assert_eq!(status.pinned_version, PINNED_VERSION);
-        assert!(status.auto_update_disabled);
     }
 
     #[test]
@@ -190,7 +167,6 @@ mod tests {
         let detected = DetectedCli {
             path: PathBuf::from("/tmp/agent"),
             version: "2026.01.01-aaaaaaa".into(),
-            auto_update_flag_supported: true,
         };
         let status = build_status(&CliConfig::default(), Some(&detected), None);
         assert!(status.present);
@@ -203,7 +179,6 @@ mod tests {
         let detected = DetectedCli {
             path: PathBuf::from("/tmp/agent"),
             version: PINNED_VERSION.into(),
-            auto_update_flag_supported: true,
         };
         let status = build_status(
             &CliConfig::default(),

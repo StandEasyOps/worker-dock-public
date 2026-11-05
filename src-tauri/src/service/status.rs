@@ -9,8 +9,8 @@ use std::time::Duration;
 use url::Url;
 
 use crate::logs;
-use crate::service::metrics::{self, WorkerMetrics};
 use crate::service::RuntimeView;
+use crate::service::metrics::{self, WorkerMetrics};
 use crate::worker::paths::{WRAPPER_LOG, worker_data_dir};
 
 pub const READY_LOG_LINE: &str = "Private worker started";
@@ -80,9 +80,7 @@ pub fn detail_for(
         "connected" if ready_from_log => {
             format!("Log line: {READY_LOG_LINE}.")
         }
-        "starting" => {
-            "Process is up; waiting for localhost /readyz or /metrics.".to_string()
-        }
+        "starting" => "Process is up; waiting for localhost /readyz or /metrics.".to_string(),
         "stopping" => "Worker is stopping…".to_string(),
         "error" => "Supervisor reported a failed job.".to_string(),
         "stopped" if job_state == "unknown" => {

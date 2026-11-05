@@ -159,7 +159,7 @@ The CLI auto-updates by default. `agent update` on this already-current build pr
 
 `about --format json` reported `latestStatus` `up_to_date`. Other values were not observed. Packages come from `downloads.cursor.com/lab/<version>/<os>/<arch>/agent-cli-package.tar.gz`. The installer points `~/.local/bin/agent` at the new version directory and leaves older trees under `versions/`.
 
-`update` has no documented pin flag. A changelog mentions `--disable-auto-update`. That flag was not in this build's root help. worker-dock still passes it and treats "unknown option" as unsupported.
+`update` has no documented pin flag. A changelog mentions `--disable-auto-update`. That flag was not in this build's root help. worker-dock does not pass it. Cursor's updater owns the version, and the app execs the agent shim rather than a canonical file under `versions/<ver>/`.
 
 ## Login URL
 
@@ -211,7 +211,7 @@ Stable enough to build on. Re-check when the pinned CLI changes:
 - Exit codes disagree (`status` logged out is 0, `debug` logged out is 1, `models` logged out is 0).
 - `--data-dir` defaults to `/opt/cursor` when that path is writable, otherwise `~/.local/share/cursor-agent`.
 - One lock per data directory.
-- Auto-update can change flags and JSON between worker-dock releases. `--disable-auto-update` was not in this build's root help. The app still passes it.
+- Auto-update can change flags and JSON between worker-dock releases. `--disable-auto-update` was not in this build's root help. The app does not pass it.
 - Help text is not an API. Do not scrape it at runtime, and do not check it into this repo.
 - Computer use, desktop share, and connect-workspace are OS-specific, opt-in, and still moving. Debug does not confirm macOS Accessibility or Screen Recording.
 - Login storage differs by OS (file versus keychain). Confirm the Windows auth file path on a Windows spike before relying on it.

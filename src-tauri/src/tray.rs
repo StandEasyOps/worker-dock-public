@@ -228,8 +228,14 @@ pub fn tray_update(app: AppHandle, view: TrayView) -> Result<(), String> {
 fn build_menu(app: &AppHandle, view: &TrayView) -> Result<Menu<tauri::Wry>, String> {
     // Disabled title absorbs the mouse-up that opened the AppIndicator menu
     // so "Open" is not activated by the same click that revealed the menu.
-    let header = MenuItem::with_id(app, "header", crate::brand::DISPLAY_NAME, false, None::<&str>)
-        .map_err(|error| error.to_string())?;
+    let header = MenuItem::with_id(
+        app,
+        "header",
+        crate::brand::DISPLAY_NAME,
+        false,
+        None::<&str>,
+    )
+    .map_err(|error| error.to_string())?;
     let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)
         .map_err(|error| error.to_string())?;
     let start = MenuItem::with_id(app, "start", "Start service", view.can_start, None::<&str>)
@@ -370,7 +376,10 @@ mod tests {
         assert!(!close_is_spurious());
         mark_shown();
         assert!(close_is_spurious());
-        LAST_SHOW_MS.store(now_ms().saturating_sub(SUPPRESS_CLOSE_MS + 1), Ordering::SeqCst);
+        LAST_SHOW_MS.store(
+            now_ms().saturating_sub(SUPPRESS_CLOSE_MS + 1),
+            Ordering::SeqCst,
+        );
         assert!(!close_is_spurious());
     }
 
